@@ -1,6 +1,5 @@
 import os
 import logging
-#from pathos.multiprocessing import ProcessingPool as Pool
 from multiprocessing import Pool
 from collections import defaultdict
 from functools import partial
@@ -10,21 +9,24 @@ import pandas as pd
 import drms
 from tqdm import tqdm, trange
 
-from data import read_header, read_goes, query
+from data import read_header, query
 from utils import get_flare_index
 
-logging.basicConfig(#filename='log.txt',
-                    #filemode='a',
-                    format='%(asctime)s,%(msecs)d %(name)s %(levelname)s %(message)s',
-                    datefmt='%m/%d %H:%M:%S',
-                    level=logging.DEBUG)
-logger = logging.getLogger()
-logger.info('==== Running ====')
+
+######### Change these ##########
+DATA_DIR = '/data2'
+#################################
 
 
 GOES_TIME_FORMAT = '%Y-%m-%dT%H:%M:%S.000'
-FEATURES = ['AREA', 'USFLUX', 'MEANGBZ', 'R_VALUE']
-goes = read_goes()
+KEYWORDS = ['AREA', 'USFLUX', 'MEANGBZ', 'R_VALUE']
+goes = pd.read_csv(os.path.join(DATA_DIR, 'GOES/goes.csv'))
+logging.basicConfig(#filename='log.txt',
+                    #filemode='a',
+                    format='%[(asctime)s] %(name)s %(levelname)s: %(message)s',
+                    datefmt='%Y-%m-%d %H:%M:%S',
+                    level=logging.DEBUG)
+logger = logging.getLogger()
 
 
 def get_prefix(dataset):
@@ -40,15 +42,20 @@ def get_prefix(dataset):
 def get_image_filepath(dataset, arpnum, t_rec):
     t_rec = t_rec.strftime('%Y%m%d_%H%M%S_TAI')
     if dataset == 'sharp':
-        return f'/data2/SHARP/image/{arpnum:06d}/hmi.sharp_cea_720s.{arpnum}.{t_rec}.magnetogram.fits'
+        return os.path.join(DATA_DIR, f'SHARP/image/{arpnum:06d}/hmi.sharp_cea_720s.{arpnum}.{t_rec}.magnetogram.fits')
     elif dataset == 'smarp':
-        return f'/data2/SMARP/image/{arpnum:06d}/su_mbobra.smarp_cea_96m.{arpnum}.{t_rec}.magnetogram.fits'
+        return os.path.join(DATA_DIR, f'SMARP/image/{arpnum:06d}/su_mbobra.smarp_cea_96m.{arpnum}.{t_rec}.magnetogram.fits')
     else:
         raise
 
 
 def split(dataset, split_num, seed=None):
-    header_dir = f'/data2/{dataset.upper()}/header'
+    if dataset == 'sharp':
+        header_dir = os.path.join(DATA_DIR, 'SHARP/header_vec')
+    elif dataset == 'smarp':
+        header_dir = os.path.join(DATA_DIR, 'SMARP/header')
+    else:
+        raise
     header_files = sorted(os.listdir(header_dir))
     np.random.seed(seed)
     numbers = np.random.permutation([int(f[4:10]) for f in header_files])
@@ -79,6 +86,7 @@ def select_per_arp(dataset, arpnum):
     Args:
         dataset (str): 'smarp' or 'sharp'
         arpnum (int): active region patch number
+
     Returns:
         samples (list): a list of samples, each represented by a dictionary
     """
@@ -99,12 +107,17 @@ def select_per_arp(dataset, arpnum):
     noaa_ars = [int(ar) for ar in noaa_ars[0].split(',')]
     goes_ar = goes[goes['noaa_active_region'].isin(noaa_ars)]
 
-    # For SHARP, only keep observations after 2010.10.29
+    # For SHARP, only keep observations between 2010.10.29 and 2020.12.01
     df['T_REC'] = df['T_REC'].apply(drms.to_datetime)
     T_REC_MIN = datetime(year=2010, month=10, day=29)
-    if dataset == 'sharp' and df['T_REC'].iloc[0] < T_REC_MIN:
-        logging.info('HARP %d has data before 2010.10.29' % arpnum)
-        df = df[df['T_REC'] >= T_REC_MIN]
+    T_REC_MAX = datetime(year=2020, month=12, day=1)
+    if dataset == 'sharp':
+        if df['T_REC'].iloc[0] < T_REC_MIN:
+            logging.info('HARP %d has data before 2010.10.29' % arpnum)
+            df = df[df['T_REC'] >= T_REC_MIN]
+        if df['T_REC'].iloc[-1] > T_REC_MAX:
+            logging.info('HARP %d has data after 2020.12.01' % arpnum)
+            df = df[df['T_REC'] <= T_REC_MAX]
         if len(df) == 0:
             return None
 
@@ -123,18 +136,18 @@ def select_per_arp(dataset, arpnum):
         t_start = df.loc[idx, 'T_REC']  # sequence start
         t_end = t_start + OBS_TIME  # sequence end; flare issuance time
         mask = (df['T_REC'] >= t_start) & (df['T_REC'] <= t_end)
-        if len(df.loc[mask]) < 15:
-            # should be 16 frames (1+24*60/96) if no frames are missing
-            # incomplete seq at end of harp/tarp will also be excluded
-            # DAFFS distinguish corrupted/missing data... imputing...
+        if len(df.loc[mask]) <= 14:
+            # Allow for at most 2 missing frames
+            # There are 16 frames (1+24*60/96) if no frame is missing
             continue
 
-        if (df.loc[mask, FEATURES].isna().sum(axis=0) > 2).any():
-            # If any feature column has more than 2 missing entries
-            #print(df.loc[mask, FEATURES].isna())
+        if (df.loc[mask, KEYWORDS].isna().sum(axis=0) > 2).any():
+            # Allow for at most 2 missing entries for each feature column
+            #print(df.loc[mask, KEYWORDS].isna())
             continue
 
-        if df.loc[mask, FEATURES].iloc[-1,:].isna().any():
+        if df.loc[mask, KEYWORDS].iloc[-1,:].isna().any():
+            # The last record is used in snapshot datasets so it can't be nan
             continue
 
         t_after = t_end + VAL_TIME
@@ -144,6 +157,7 @@ def select_per_arp(dataset, arpnum):
                                    'goes_class'].tolist()
         flares_after = '|'.join(flares_after)
         label = 'M' in flares_after or 'X' in flares_after
+
         flares_before = goes_ar.loc[(goes_ar['start_time'] >= t_before.strftime(GOES_TIME_FORMAT)) &
                                     (goes_ar['start_time'] <= t_end.strftime(GOES_TIME_FORMAT)),
                                     'goes_class'].tolist()
@@ -167,7 +181,7 @@ def select_per_arp(dataset, arpnum):
             'flares': flares_after,
             'FLARE_INDEX': flare_index,
         }
-        sample.update({k: df.loc[mask, k].iloc[-1] for k in FEATURES})
+        sample.update({k: df.loc[mask, k].iloc[-1] for k in KEYWORDS})
         samples.append(sample)
     logging.info('{} {}: {}/{} sequences extracted'.format(get_prefix(dataset), arpnum, len(samples), len(df)))
     return samples
@@ -193,6 +207,13 @@ def main(dataset, split_num=5, output_dir=None):
     test_df.to_csv(os.path.join(output_dir, 'test.csv'), index=False)
 
 
+def test_seed():
+    np.random.seed(0)
+    a = np.random.randint(0, 65536, 10)
+    assert np.all(a==[2732, 43567, 42613, 52416, 45891, 21243, 30403, 32103, 41993, 57043])
+
+
 if __name__ == '__main__':
-    for dataset in ['smarp', 'sharp']
-        main('smarp', split_num=5, output_dir=None)
+    test_seed()
+    for dataset in ['sharp', 'smarp']:
+        main(dataset, split_num=5, output_dir=None)
