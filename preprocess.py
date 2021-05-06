@@ -21,11 +21,12 @@ DATA_DIR = '/data2'
 GOES_TIME_FORMAT = '%Y-%m-%dT%H:%M:%S.000'
 KEYWORDS = ['AREA', 'USFLUX', 'MEANGBZ', 'R_VALUE']
 goes = pd.read_csv(os.path.join(DATA_DIR, 'GOES/goes.csv'))
-logging.basicConfig(#filename='log.txt',
-                    #filemode='a',
-                    format='%[(asctime)s] %(name)s %(levelname)s: %(message)s',
+goes['goes_class'] = goes['goes_class'].fillna('')
+logging.basicConfig(filename='log_preprocess.txt',
+                    filemode='a',
+                    format='[%(asctime)s] %(name)s %(levelname)s: %(message)s',
                     datefmt='%Y-%m-%d %H:%M:%S',
-                    level=logging.DEBUG)
+                    level=logging.INFO)
 logger = logging.getLogger()
 
 
@@ -112,12 +113,8 @@ def select_per_arp(dataset, arpnum):
     T_REC_MIN = datetime(year=2010, month=10, day=29)
     T_REC_MAX = datetime(year=2020, month=12, day=1)
     if dataset == 'sharp':
-        if df['T_REC'].iloc[0] < T_REC_MIN:
-            logging.info('HARP %d has data before 2010.10.29' % arpnum)
-            df = df[df['T_REC'] >= T_REC_MIN]
-        if df['T_REC'].iloc[-1] > T_REC_MAX:
-            logging.info('HARP %d has data after 2020.12.01' % arpnum)
-            df = df[df['T_REC'] <= T_REC_MAX]
+        df = df[(df['T_REC'] >= T_REC_MIN) &
+                (df['T_REC'] <= T_REC_MAX)]
         if len(df) == 0:
             return None
 
@@ -193,7 +190,7 @@ def main(dataset, split_num=5, output_dir=None):
         os.makedirs(output_dir)
 
     splits = split(dataset, split_num, seed=0)
-    for key, arpnums in enumerate(splits):
+    for key, arpnums in tqdm(enumerate(splits)):
         logger.info(f'Split {key} / {len(splits)-1}')
         df = select(dataset, arpnums)
         filepath = os.path.join(output_dir, f'{dataset}_{key}.csv')
@@ -215,5 +212,5 @@ def test_seed():
 
 if __name__ == '__main__':
     test_seed()
-    for dataset in ['sharp', 'smarp']:
+    for dataset in ['smarp', 'sharp']:
         main(dataset, split_num=5, output_dir=None)
