@@ -156,13 +156,15 @@ def download_goes():
     # Up until 2021-05-21, the last record retrieved by sunpy is a B3.2 flare
     # at 2020-12-23T05:53:00 in AR 12795.
     year_range = range(1996, 2022)
-    with Pool(24) as pool:
+    with Pool(6) as pool:
         df_list = pool.map(download_goes_per_year, year_range)
-
     print("These years don't have GOES events assigned with NOAA AR: {}".format(
           [year_range[i] for i, df in enumerate(df_list) if df is None]))
-    event_df = pd.concat(df_list).reset_index(drop=True)
-    event_df.to_csv(os.path.join(GOES_DIR, 'goes.csv'), index=None)
+
+    goes = pd.concat(df_list)
+    goes['goes_class'] = goes['goes_class'].fillna('')
+    goes = goes[goes['goes_class'] == 'C']  # remove two incomplete records
+    goes.to_csv(os.path.join(GOES_DIR, 'goes.csv'), index=None)
 
 
 def batch_run(func, max_num, batch_size, num_workers=8):
