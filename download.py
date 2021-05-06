@@ -163,7 +163,7 @@ def download_goes():
 
     goes = pd.concat(df_list)
     goes['goes_class'] = goes['goes_class'].fillna('')
-    goes = goes[goes['goes_class'] == 'C']  # remove two incomplete records
+    goes = goes[goes['goes_class'] != 'C']  # remove two incomplete records
     goes.to_csv(os.path.join(GOES_DIR, 'goes.csv'), index=None)
 
 
