@@ -1,8 +1,10 @@
 .*.swp
+mlruns/
 archive/
 download/
-outputs*
-log_*
+outputs/
+logs/
+# output_* will mess up the working directory
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

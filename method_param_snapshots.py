@@ -4,6 +4,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import wandb
 import joblib
+import mlflow
 from skopt import BayesSearchCV
 from skopt.plots import plot_objective
 from sklearn.preprocessing import StandardScaler
@@ -26,10 +27,9 @@ from metrics import tss, hss2, roc_auc_score, get_scores_from_cm
 
 sharp2smarp = np.load('datasets/sharp2smarp.npy', allow_pickle=True).item()
 FEATURES = ['AREA', 'USFLUX', 'MEANGBZ', 'R_VALUE', 'FLARE_INDEX']
+EXPERIMENT_NAME ='baseline'
+mlflow.set_experiment(EXPERIMENT_NAME)
 
-
-
-    
 
 def get_data(filepath):
     df = pd.read_csv(filepath)
@@ -116,15 +116,17 @@ def evaluate(dataset, model, save_dir=None):
     #        print(f"{diabetes.feature_names[i]:<8}"
     #              f"{r.importances_mean[i]:.3f}"
     #              f" +/- {r.importances_std[i]:.3f}")
+
+    mlflow.log_artifact(os.path.join(save_dir, 'roc.png'))
+    mlflow.log_artifact(os.path.join(save_dir, 'confusion_matrix.png'))
     return scores
 
 
 def tune(dataset, Model, param_space, method='grid', save_dir=None):
     X_train, X_test, y_train, y_test = load_dataset(dataset)
 
-    #scorer = make_scorer(hss2)
+    scorer = make_scorer(hss2)
     #scorer = make_scorer(roc_auc_score, needs_threshold=True)
-    #scorer = make_scorer(tss)
     
     pipe = Pipeline([
         ('rus', RandomUnderSampler()),
@@ -302,7 +304,15 @@ def sklearn_main(output_dir='outputs'):
             best_model = tune(dataset, Model, param_space, method='bayes', save_dir=model_dir)
             # Alternatively, param_space = grids[Model.__name__] and use 'grid' method
 
-            scores = evaluate(dataset, best_model, save_dir=model_dir)
+            with mlflow.start_run(run_name='Model.__name__') as run:
+                scores = evaluate(dataset, best_model, save_dir=model_dir)
+
+                mlflow.log_param('sampling_strategy', best_model.best_params_['rus__sampling_strategy'])
+                mlflow.log_params({k.replace('model__', ''): v for k, v in
+                    best_model.best_params_.items() if k.startswith('model__')})
+                mlflow.set_tag('estimator_name', Model.__name__)
+                mlflow.log_metrics(scores)
+                #mlflow.sklearn.log_model(best_model, 'mlflow_model')
 
             r = {
                 'dataset': dataset,
@@ -325,6 +335,6 @@ def sklearn_main(output_dir='outputs'):
 if __name__ == '__main__':
     import cProfile, pstats
     with cProfile.Profile() as p:
-        sklearn_main('outputs_sklearn_hss2')
+        sklearn_main(f'outputs/{EXPERIMENT_NAME}')
     
     pstats.Stats(p).sort_stats('cumtime').print_stats(50)
