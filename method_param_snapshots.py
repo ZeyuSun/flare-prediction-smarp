@@ -17,7 +17,7 @@ from sklearn.discriminant_analysis import QuadraticDiscriminantAnalysis
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.linear_model import SGDClassifier
 from sklearn.svm import SVC
-from sklearn.tree import DecisionTreeClassifier
+from sklearn.tree import DecisionTreeClassifier, plot_tree
 from sklearn.experimental import enable_hist_gradient_boosting
 from sklearn.ensemble import RandomForestClassifier, ExtraTreesClassifier, AdaBoostClassifier, GradientBoostingClassifier, HistGradientBoostingClassifier
 from xgboost import XGBClassifier
@@ -92,7 +92,7 @@ def evaluate(dataset, model, save_dir=None):
     if save_dir is not None:
         plt.savefig(os.path.join(save_dir, 'confusion_matrix.png'))
         mlflow.log_artifact(os.path.join(save_dir, 'confusion_matrix.png'))
-        mlflow.log_figure(plt.gcf())
+        mlflow.log_figure(plt.gcf(), 'confusion_matrix_figure.png')
     #plt.show()
     
     scorer = make_scorer(roc_auc_score, needs_threshold=True)
@@ -101,7 +101,7 @@ def evaluate(dataset, model, save_dir=None):
     if save_dir is not None:
         plt.savefig(os.path.join(save_dir, 'roc.png'))
         mlflow.log_artifact(os.path.join(save_dir, 'roc.png'))
-        mlflow.log_figure(plt.gcf())
+        mlflow.log_figure(plt.gcf(), 'roc_figure.png')
     #plt.show()
 
     scores = get_scores_from_cm(cm)
@@ -110,6 +110,16 @@ def evaluate(dataset, model, save_dir=None):
         save_path = os.path.join(save_dir, 'best_model_test_scores.md')
         pd.DataFrame(scores, index=[0,]).to_markdown(save_path, tablefmt='grid')
 
+    # Inspect
+    estimator = model.best_estimator_['model']
+    if isinstance(estimator, DecisionTreeClassifier):
+        plot_tree(estimator,
+                  feature_names=FEATURES,
+                  filled=True)
+        save_path = os.path.join(save_dir, 'tree.png')
+        plt.savefig(save_path)
+        mlflow.log_artifact(save_path)
+        mlflow.log_figure(plt.gcf(), 'tree_figure.png')
     #from sklearn.inspection import permutation_importance
     #r = permutation_importance(model, X_test, y_test,
     #                           n_repeats=10,
@@ -156,15 +166,16 @@ def tune(dataset, Model, param_space, method='grid', save_dir=None):
     elif method == 'bayes':
         search = BayesSearchCV(pipe,
                                pipe_space,
-                               n_iter=20, # default 50
+                               n_iter=20, # default 50 # 8 cause out of range
                                scoring=scorer,
                                n_jobs=20, # at most n_points * cv jobs
                                n_points=4, # number of points to run in parallel
+                               #pre_dispatch=2*njobs by default
                                cv=5, # if integer, StratifiedKFold is used by default
                                refit=True, # default True
                                verbose=1)
         search.fit(X_train, y_train)
-        _ = plot_objective(search.optimizer_results_[0],
+        _ = plot_objective(search.optimizer_results_[0],  # index out of range for QDA? If search space is empty, then the optimizer_results_ has length 1, but in plot_objective, optimizer_results_.models[-1] is called but models is an empty list. This should happen for all n_jobs though. Why didn't I come across it?
                            dimensions=list(pipe_space.keys()), # ["C", "degree", "gamma", "kernel"],
                            n_minimum_search=int(1e8)) # Partial Dependence plots of the objective function
         plt.tight_layout()
@@ -201,16 +212,18 @@ def tune(dataset, Model, param_space, method='grid', save_dir=None):
     cv_results = {
         'score mean': search.cv_results_['mean_test_score'],
         'score std': search.cv_results_['std_test_score'],
-        'rank': search.cv_results_['rank_test_score'],
+        'rank': [int(i) for i in search.cv_results_['rank_test_score']],
+        # BayesSearchCV rank uses numpy.int32, which is not json serializable
     }
-    trials = search.cv_results['params']
+    trials = search.cv_results_['params']
     cv_results.update({p.split('__')[1]: [t[p] for t in trials] for p in trials[0]})
     mlflow.log_dict(cv_results, 'cv_results.json')
 
     cv_df = pd.DataFrame(cv_results)
-    cv_df.to_markdown('cv_results.md', tablefmt='grid')
+    cv_file = os.path.join(save_dir, 'cv_results.md')
+    cv_df.to_markdown(cv_file, tablefmt='grid')
     print(cv_df.to_markdown(tablefmt='grid'))
-    mlflow.log_artifact('cv_results.md')
+    mlflow.log_artifact(cv_file)
 
     return search
 
@@ -221,7 +234,7 @@ def sklearn_main(output_dir='outputs'):
     
     Models = [
         #KNeighborsClassifier,
-        QuadraticDiscriminantAnalysis,
+        #QuadraticDiscriminantAnalysis,
         SGDClassifier,
         #SVC,
         DecisionTreeClassifier,
@@ -229,7 +242,7 @@ def sklearn_main(output_dir='outputs'):
         #ExtraTreesClassifier,
         #AdaBoostClassifier,
         #GradientBoostingClassifier,
-        HistGradientBoostingClassifier,
+        #HistGradientBoostingClassifier,
     ]
 
     grids = {
@@ -250,12 +263,12 @@ def sklearn_main(output_dir='outputs'):
             ],
         },
         'DecisionTreeClassifier': {
-            'max_depth': [2, 4, 8, 16], # default None
+            'max_depth': [1, 2, 4, 8], # default None
             'min_samples_leaf': [1, 0.00001, 0.0001, 0.001, 0.01], # 1 and 1.0 are different. Default 1
         },
         'RandomForestClassifier': {
             'n_estimators': [10, 100, 1000],
-            'max_depth': [None, 4, 8, 16],
+            'max_depth': [None, 2, 4, 8],  # weak learners
             #'min_samples_split': 2,
         },
         'ExtraTreesClassifier': {
@@ -279,14 +292,17 @@ def sklearn_main(output_dir='outputs'):
         },
         'QuadraticDiscriminantAnalysis': {},
         'DecisionTreeClassifier': {
-            'max_depth': [2, 4, 8, 16], # default None
-            'min_samples_leaf': (0.000001, 0.01, 'log-uniform'),
+            'max_depth': [1, 2, 4, 8, 16], # default None
+            #'min_samples_leaf': (0.000001, 0.01, 'log-uniform'),
             # 1 and 1.0 are different. Default 1
         },
         'RandomForestClassifier': {
             'n_estimators': [10, 100, 1000],
-            'max_depth': [None, 4, 8, 16],
-            #'min_samples_split': 2,
+            'max_depth': [None, 1, 2, 4, 8],
+            # Split a node if # of samples in the node >= min_samples_split and
+            # # of samples in each children after split >= min_samples_leaf (??)
+            #'min_samples_leaf': [1, 2],
+            #'min_samples_split': [4, 5, 6],
         },
 #         'ExtraTreesClassifier': {
 #         },
@@ -295,9 +311,9 @@ def sklearn_main(output_dir='outputs'):
 #         'GradientBoostingClassifier': {
 #         },
         'HistGradientBoostingClassifier': {
-            'learning_rate': (0.001, 0.1, 'log-uniform'),
-            'max_iter': [50, 100, 200],
-            'max_depth': [None, 10, 20],
+            'learning_rate': (0.0001, 0.1, 'log-uniform'),
+            'max_iter': [50, 100, 200, 400, 1000],
+            'max_depth': [None, 2, 4, 6],
         },
     }
     
@@ -309,10 +325,11 @@ def sklearn_main(output_dir='outputs'):
                 os.makedirs(model_dir)
 
             param_space = distributions[Model.__name__]
-            best_model = tune(dataset, Model, param_space, method='bayes', save_dir=model_dir)
-            # Alternatively, param_space = grids[Model.__name__] and use 'grid' method
 
-            with mlflow.start_run(run_name='Model.__name__') as run:
+            with mlflow.start_run(run_name=Model.__name__) as run:
+                best_model = tune(dataset, Model, param_space, method='bayes', save_dir=model_dir)
+                # Alternatively, param_space = grids[Model.__name__] and use 'grid' method
+
                 scores = evaluate(dataset, best_model, save_dir=model_dir)
 
                 mlflow.log_param('sampling_strategy', best_model.best_params_['rus__sampling_strategy'])
