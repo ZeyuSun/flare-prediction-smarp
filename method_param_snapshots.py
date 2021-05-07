@@ -89,16 +89,20 @@ def evaluate(dataset, model, save_dir=None):
     cm = confusion_matrix(y_test, y_pred)
     
     plot_confusion_matrix(model, X_test, y_test)
-    #plt.show()
     if save_dir is not None:
         plt.savefig(os.path.join(save_dir, 'confusion_matrix.png'))
+        mlflow.log_artifact(os.path.join(save_dir, 'confusion_matrix.png'))
+        mlflow.log_figure(plt.gcf())
+    #plt.show()
     
     scorer = make_scorer(roc_auc_score, needs_threshold=True)
     auc = scorer(model, X_test, y_test)
     plot_roc_curve(model, X_test, y_test) #TODO: mark decision threshold
-    #plt.show()
     if save_dir is not None:
         plt.savefig(os.path.join(save_dir, 'roc.png'))
+        mlflow.log_artifact(os.path.join(save_dir, 'roc.png'))
+        mlflow.log_figure(plt.gcf())
+    #plt.show()
 
     scores = get_scores_from_cm(cm)
     scores.update({'auc': auc})
@@ -106,10 +110,10 @@ def evaluate(dataset, model, save_dir=None):
         save_path = os.path.join(save_dir, 'best_model_test_scores.md')
         pd.DataFrame(scores, index=[0,]).to_markdown(save_path, tablefmt='grid')
 
-    from sklearn.inspection import permutation_importance
-    r = permutation_importance(model, X_test, y_test,
-                               n_repeats=10,
-                               random_state=0)
+    #from sklearn.inspection import permutation_importance
+    #r = permutation_importance(model, X_test, y_test,
+    #                           n_repeats=10,
+    #                           random_state=0)
     
     #for i in r.importances_mean.argsort()[::-1]:
     #    if r.importances_mean[i] - 2 * r.importances_std[i] > 0:
@@ -117,8 +121,6 @@ def evaluate(dataset, model, save_dir=None):
     #              f"{r.importances_mean[i]:.3f}"
     #              f" +/- {r.importances_std[i]:.3f}")
 
-    mlflow.log_artifact(os.path.join(save_dir, 'roc.png'))
-    mlflow.log_artifact(os.path.join(save_dir, 'confusion_matrix.png'))
     return scores
 
 
@@ -187,23 +189,29 @@ def tune(dataset, Model, param_space, method='grid', save_dir=None):
                                   #color_continuous_midpoint=2
                                  )
     if save_dir is not None:
-        fig.write_html(os.path.join(save_dir, 'parallel_coordinates.html'))
-        #fig.write_image(os.path.join(save_dir, 'parallel_coordinates.png'))
+        filepath = os.path.join(save_dir, 'parallel_coordinates.html')
+        fig.write_html(filepath)
+        mlflow.log_artifact(filepath)
     #fig.show()
     
     if save_dir is not None:
         joblib.dump(search, os.path.join(save_dir, 'model.joblib'))
     
-    print('==============================================')
     print(f'CV results of {Model.__name__} on {dataset}:')
-    cv_results = pd.DataFrame({
-        'Score mean': search.cv_results_['mean_test_score'],
-        'Score std': search.cv_results_['std_test_score'],
-        'Rank': search.cv_results_['rank_test_score'],
-        'Param': [dict(d) for d in search.cv_results_['params']] # dict() for more concise repr
-    })
-    print(cv_results.to_markdown(tablefmt='grid'))
-    
+    cv_results = {
+        'score mean': search.cv_results_['mean_test_score'],
+        'score std': search.cv_results_['std_test_score'],
+        'rank': search.cv_results_['rank_test_score'],
+    }
+    trials = search.cv_results['params']
+    cv_results.update({p.split('__')[1]: [t[p] for t in trials] for p in trials[0]})
+    mlflow.log_dict(cv_results, 'cv_results.json')
+
+    cv_df = pd.DataFrame(cv_results)
+    cv_df.to_markdown('cv_results.md', tablefmt='grid')
+    print(cv_df.to_markdown(tablefmt='grid'))
+    mlflow.log_artifact('cv_results.md')
+
     return search
 
 
