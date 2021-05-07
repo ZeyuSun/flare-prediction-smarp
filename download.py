@@ -24,6 +24,9 @@ SHARP_IMAGE_DIR = os.path.join(DATA_DIR, 'SHARP_720s/image')
 for folder in [SHARP_LOS_HEADER_DIR, SHARP_VEC_HEADER_DIR, SHARP_IMAGE_DIR]:
     if not os.path.exists(folder):
         os.makedirs(folder)
+_re_export_recset = re.compile(r'^\s*([\w\.]+)\s*(\[.*\])?\s*(?:\{([\w\s\.,]*)\})?\s*$')
+_re_export_recset_pkeys = re.compile(r'\[([^\[^\]]*)\]')
+_re_export_recset_slist = re.compile(r'[\s,]+')
 
 
 def download_sharp_headers(harpnum):
@@ -60,6 +63,17 @@ def download_sharp_headers(harpnum):
 
     keys.to_csv(filename, index=None)
     return 0
+
+
+def _filename_from_export_record(rs):
+    m = _re_export_recset.match(rs)
+    sname, pkeys, segs = m.groups()
+    pkeys = _re_export_recset_pkeys.findall(pkeys)
+    segs = _re_export_recset_slist.split(segs)
+    pkeys[1] = pkeys[1].replace('.', "").replace(':', "").replace('-', "")
+    str_list = [sname] + pkeys + segs + ['fits']
+    fname = '.'.join(str_list)
+    return fname
 
 
 def download_sharp_images(harpnum):
