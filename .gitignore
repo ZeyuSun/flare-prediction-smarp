@@ -1,6 +1,7 @@
+.*.swp
 archive/
 download/
-outputs/
+outputs*
 log_*
 
 # Byte-compiled / optimized / DLL files
