@@ -2,6 +2,7 @@ import os
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+import plotly.express as px
 import wandb
 import joblib
 import mlflow
@@ -40,11 +41,12 @@ def get_data(filepath):
     if 'sharp' in filepath:
         for k, v in sharp2smarp.items():
             df[k] = df[k] * v['coef'] + v['intercept']
-    
+
     X = df[FEATURES].to_numpy()
     y = df['label'].to_numpy()
 
     return X, y
+
 
 def load_dataset(dataset):
     if dataset == 'combined':
@@ -65,11 +67,6 @@ def load_dataset(dataset):
         X_test, y_test = get_data('datasets/sharp/test.csv')
     else:
         raise
-    
-    # random undersampling
-    #X_train, y_train = rus(X_train, y_train)
-    #print(X_train.shape, y_train.shape, X_test.shape, y_test.shape)
-    #print(y_train.mean(), y_test.mean())
 
     # standardization
     X_mean = X_train.mean(0)
@@ -77,55 +74,66 @@ def load_dataset(dataset):
     #print(X_mean, X_std)
     Z_train = (X_train - X_mean) / X_std
     Z_test = (X_test - X_mean) / X_std
-    
+
     return Z_train, Z_test, y_train, y_test
 
-def evaluate(dataset, model, save_dir=None):
+
+def evaluate(dataset, model, save_dir='outputs'):
     if isinstance(model, str):
         import pickle
         model = pickle.load(model)
-    
+
     X_train, X_test, y_train, y_test = load_dataset(dataset)
     y_pred = model.predict(X_test)
     cm = confusion_matrix(y_test, y_pred)
-    
+
     plot_confusion_matrix(model, X_test, y_test)
-    if save_dir is not None:
-        plt.savefig(os.path.join(save_dir, 'confusion_matrix.png'))
-        mlflow.log_artifact(os.path.join(save_dir, 'confusion_matrix.png'))
-        mlflow.log_figure(plt.gcf(), 'confusion_matrix_figure.png')
+    save_path = os.path.join(save_dir, 'confusion_matrix.png')
+    plt.savefig(save_path)
+    mlflow.log_artifact(save_path)
+    #mlflow.log_figure(plt.gcf(), 'confusion_matrix_figure.png')
     #plt.show()
-    
+
     scorer = make_scorer(roc_auc_score, needs_threshold=True)
     auc = scorer(model, X_test, y_test)
     plot_roc_curve(model, X_test, y_test) #TODO: mark decision threshold
-    if save_dir is not None:
-        plt.savefig(os.path.join(save_dir, 'roc.png'))
-        mlflow.log_artifact(os.path.join(save_dir, 'roc.png'))
-        mlflow.log_figure(plt.gcf(), 'roc_figure.png')
+    plt.savefig(os.path.join(save_dir, 'roc.png'))
+    mlflow.log_artifact(os.path.join(save_dir, 'roc.png'))
+    mlflow.log_figure(plt.gcf(), 'roc_figure.png')
     #plt.show()
 
     scores = get_scores_from_cm(cm)
     scores.update({'auc': auc})
-    if save_dir is not None:
-        save_path = os.path.join(save_dir, 'best_model_test_scores.md')
-        pd.DataFrame(scores, index=[0,]).to_markdown(save_path, tablefmt='grid')
+    save_path = os.path.join(save_dir, 'best_model_test_scores.md')
+    pd.DataFrame(scores, index=[0,]).to_markdown(save_path, tablefmt='grid')
 
     # Inspect
     estimator = model.best_estimator_['model']
     if isinstance(estimator, DecisionTreeClassifier):
-        plot_tree(estimator,
-                  feature_names=FEATURES,
-                  filled=True)
-        save_path = os.path.join(save_dir, 'tree.png')
-        plt.savefig(save_path)
-        mlflow.log_artifact(save_path)
-        mlflow.log_figure(plt.gcf(), 'tree_figure.png')
+        if estimator.tree_.node_count < 16: # max depth 4
+            plot_tree(estimator,
+                      feature_names=FEATURES,
+                      filled=True)
+            save_path = os.path.join(save_dir, 'tree.png')
+            plt.savefig(save_path)
+            mlflow.log_artifact(save_path)
+            mlflow.log_figure(plt.gcf(), 'tree_figure.png')
+    if isinstance(estimator, RandomForestClassifier):
+        # Feature importance based on mean decrease in impurity
+        fig, ax = plt.subplots()
+        forest_importances = pd.Series(estimator.feature_importances_,
+                                       index=FEATURES)
+        std = np.std([tree.feature_importances_ for tree in estimator.estimators_], axis=0)
+        forest_importances.plot.bar(yerr=std, ax=ax)
+        ax.set_title("Feature importances using MDI")
+        ax.set_ylabel("Mean decrease in impurity")
+        fig.tight_layout()
+        mlflow.log_figure(fig, 'forest_importances.png')
     #from sklearn.inspection import permutation_importance
     #r = permutation_importance(model, X_test, y_test,
     #                           n_repeats=10,
     #                           random_state=0)
-    
+
     #for i in r.importances_mean.argsort()[::-1]:
     #    if r.importances_mean[i] - 2 * r.importances_std[i] > 0:
     #        print(f"{diabetes.feature_names[i]:<8}"
@@ -135,24 +143,21 @@ def evaluate(dataset, model, save_dir=None):
     return scores
 
 
-def tune(dataset, Model, param_space, method='grid', save_dir=None):
+def tune(dataset, Model, param_space, method='grid', save_dir='outputs'):
     X_train, X_test, y_train, y_test = load_dataset(dataset)
 
     scorer = make_scorer(hss2)
     #scorer = make_scorer(roc_auc_score, needs_threshold=True)
-    
+
     pipe = Pipeline([
         ('rus', RandomUnderSampler()),
         #('scaler', StandardScaler()), # already did it in loading
         ('model', Model())
     ])
-    
     pipe_space = {'model__' + k: v for k, v in param_space.items()}
     pipe_space.update({
-        'rus__sampling_strategy': [  # desired ratio of minority:majority
-            1,
-            0.5,
-            0.1]
+        #'rus__sampling_strategy': [1, 0.5, 0.1]  # desired ratio of minority:majority
+        'rus__sampling_strategy': (0.1, 1, 'uniform')
     })
 
     if method == 'grid':
@@ -167,64 +172,57 @@ def tune(dataset, Model, param_space, method='grid', save_dir=None):
     elif method == 'bayes':
         search = BayesSearchCV(pipe,
                                pipe_space,
-                               n_iter=20, # default 50 # 8 cause out of range
+                               n_iter=50, # default 50 # 8 cause out of range
                                scoring=scorer,
-                               n_jobs=20, # at most n_points * cv jobs
-                               n_points=4, # number of points to run in parallel
-                               #pre_dispatch=2*njobs by default
+                               n_jobs=10, # at most n_points * cv jobs
+                               n_points=2, # number of points to run in parallel
+                               #pre_dispatch default to'2*n_jobs'. Can't be None. See joblib
                                cv=5, # if integer, StratifiedKFold is used by default
                                refit=True, # default True
                                verbose=1)
         search.fit(X_train, y_train)
+        # Partial Dependence plots of the (surrogate) objective function
         _ = plot_objective(search.optimizer_results_[0],  # index out of range for QDA? If search space is empty, then the optimizer_results_ has length 1, but in plot_objective, optimizer_results_.models[-1] is called but models is an empty list. This should happen for all n_jobs though. Why didn't I come across it?
-                           dimensions=list(pipe_space.keys()), # ["C", "degree", "gamma", "kernel"],
-                           n_minimum_search=int(1e8)) # Partial Dependence plots of the objective function
+                           dimensions=list(pipe_space.keys()),
+                           n_minimum_search=int(1e8))
         plt.tight_layout()
-        if save_dir is not None:
-            plt.savefig(os.path.join(save_dir, 'parallel_dependence.png'))
+        plt.savefig(os.path.join(save_dir, 'parallel_dependence.png'))
         #plt.show()
-    
     else:
         raise
-    
-    import plotly.express as px
-    df = pd.DataFrame(search.cv_results_)
-    df = pd.DataFrame(list(search.cv_results_['params']))
-    df = df.assign(**{k: search.cv_results_[k]
-                      for k in ['mean_fit_time', 'std_test_score', 'mean_test_score']})
-    if save_dir is not None:
-        df.to_csv(os.path.join(save_dir, 'cv_results.csv'))
-        
-    fig = px.parallel_coordinates(df, color="mean_test_score",
+
+    df = pd.DataFrame(search.cv_results_['params'])
+    df = df.rename(columns=lambda p: p.split('__')[1])
+    df = df.assign(**{new_k: search.cv_results_[k] for k, new_k in
+                   [['mean_fit_time', 'fit_time'],
+                    ['std_test_score', 'score_std'],
+                    ['mean_test_score', 'score_mean'],
+                    ['rank_test_score', 'rank']]})
+
+    save_path = os.path.join(save_dir, 'cv_results.csv')
+    df.to_csv(save_path)
+    mlflow.log_artifact(save_path)
+
+    save_path = os.path.join(save_dir, 'cv_results.md')
+    df.to_markdown(save_path, tablefmt='grid')
+    mlflow.log_artifact(save_path)
+
+    print(f'CV results of {Model.__name__} on {dataset}:')
+    print(df.to_markdown(tablefmt='grid'))
+    print()
+
+    fig = px.parallel_coordinates(df, color="score_mean",
                                   dimensions=df.columns,
                                   #color_continuous_scale=px.colors.diverging.Tealrose,
                                   #color_continuous_midpoint=2
                                  )
-    if save_dir is not None:
-        filepath = os.path.join(save_dir, 'parallel_coordinates.html')
-        fig.write_html(filepath)
-        mlflow.log_artifact(filepath)
+    save_path = os.path.join(save_dir, 'parallel_coordinates.html')
+    fig.write_html(save_path)
+    mlflow.log_artifact(save_path)
     #fig.show()
-    
-    if save_dir is not None:
-        joblib.dump(search, os.path.join(save_dir, 'model.joblib'))
-    
-    print(f'CV results of {Model.__name__} on {dataset}:')
-    cv_results = {
-        'score mean': search.cv_results_['mean_test_score'],
-        'score std': search.cv_results_['std_test_score'],
-        'rank': [int(i) for i in search.cv_results_['rank_test_score']],
-        # BayesSearchCV rank uses numpy.int32, which is not json serializable
-    }
-    trials = search.cv_results_['params']
-    cv_results.update({p.split('__')[1]: [t[p] for t in trials] for p in trials[0]})
-    mlflow.log_dict(cv_results, 'cv_results.json')
 
-    cv_df = pd.DataFrame(cv_results)
-    cv_file = os.path.join(save_dir, 'cv_results.md')
-    cv_df.to_markdown(cv_file, tablefmt='grid')
-    print(cv_df.to_markdown(tablefmt='grid'))
-    mlflow.log_artifact(cv_file)
+    joblib.dump(search, os.path.join(save_dir, 'model.joblib'))
+    mlflow.sklearn.log_model(search, 'model')
 
     return search
 
@@ -232,7 +230,7 @@ def tune(dataset, Model, param_space, method='grid', save_dir=None):
 def sklearn_main(output_dir='outputs'):
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
-    
+
     Models = [
         #KNeighborsClassifier,
         #QuadraticDiscriminantAnalysis,
@@ -289,17 +287,17 @@ def sklearn_main(output_dir='outputs'):
                 'hinge', # linear SVM
                 'log', # logistic regression
             ],
-            'alpha': (1e-6, 1e-2, 'log-uniform'),
+            'alpha': (1e-6, 1e-1, 'log-uniform'),
         },
         'QuadraticDiscriminantAnalysis': {},
         'DecisionTreeClassifier': {
-            'max_depth': [1, 2, 4, 8, 16], # default None
+            'max_depth': [8, 16, 32, 64, None], # default None
             #'min_samples_leaf': (0.000001, 0.01, 'log-uniform'),
             # 1 and 1.0 are different. Default 1
         },
         'RandomForestClassifier': {
-            'n_estimators': [10, 100, 1000],
-            'max_depth': [None, 1, 2, 4, 8],
+            'n_estimators': [30, 100, 300, 1000],
+            #'max_depth': [None, 1, 2, 4, 8], # RF doesn't use weak learner
             # Split a node if # of samples in the node >= min_samples_split and
             # # of samples in each children after split >= min_samples_leaf (??)
             #'min_samples_leaf': [1, 2],
@@ -317,21 +315,21 @@ def sklearn_main(output_dir='outputs'):
             'max_depth': [None, 2, 4, 6],
         },
     }
-    
+
     results = []
     for dataset in ['sharp', 'combined']:
         for Model in Models:
-            model_dir = os.path.join(output_dir, f'{Model.__name__}_{dataset}')
-            if not os.path.exists(model_dir):
-                os.makedirs(model_dir)
+            run_dir = os.path.join(output_dir, f'{Model.__name__}_{dataset}')
+            if not os.path.exists(run_dir):
+                os.makedirs(run_dir)
 
             param_space = distributions[Model.__name__]
 
             with mlflow.start_run(run_name=RUN_NAME) as run:
-                best_model = tune(dataset, Model, param_space, method='bayes', save_dir=model_dir)
+                best_model = tune(dataset, Model, param_space, method='bayes', save_dir=run_dir)
                 # Alternatively, param_space = grids[Model.__name__] and use 'grid' method
 
-                scores = evaluate(dataset, best_model, save_dir=model_dir)
+                scores = evaluate(dataset, best_model, save_dir=run_dir)
 
                 mlflow.log_param('sampling_strategy', best_model.best_params_['rus__sampling_strategy'])
                 mlflow.log_params({k.replace('model__', ''): v for k, v in
@@ -344,24 +342,23 @@ def sklearn_main(output_dir='outputs'):
             r = {
                 'dataset': dataset,
                 'model': Model.__name__,
-                'params': dict(best_model.best_params_),
             }
             r.update(scores)
+            r.update({
+                'params': dict(best_model.best_params_),
+            })
             results.append(r)
-            
-            print('***********************************************')
-            print(pd.DataFrame(results).to_markdown(tablefmt='grid'))
 
-    print('***********************************************')
     results_df = pd.DataFrame(results)
-    results_path = os.path.join(output_dir, f'results')
-    results_df.to_markdown(results_path+'.md', tablefmt='grid')
-    results_df.to_csv(results_path+'.csv')
+    save_path = os.path.join(output_dir, f'results')
+    results_df.to_markdown(save_path+'.md', tablefmt='grid')
+    results_df.to_csv(save_path+'.csv')
+    print(results_df.to_markdown(tablefmt='grid'))
 
-    
+
 if __name__ == '__main__':
     import cProfile, pstats
     with cProfile.Profile() as p:
         sklearn_main(f'outputs/{RUN_NAME}')
-    
+
     pstats.Stats(p).sort_stats('cumtime').print_stats(50)
