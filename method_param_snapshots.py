@@ -1,4 +1,6 @@
 import os
+import argparse
+import cProfile, pstats
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -26,23 +28,17 @@ from xgboost import XGBClassifier
 from metrics import tss, hss2, roc_auc_score, get_scores_from_cm
 
 
-sharp2smarp = np.load('datasets/sharp2smarp.npy', allow_pickle=True).item()
-FEATURES = ['AREA', 'USFLUX', 'MEANGBZ', 'R_VALUE', 'FLARE_INDEX']
-EXPERIMENT_NAME ='experiment'
-mlflow.set_experiment(EXPERIMENT_NAME)
-RUN_NAME = 'baseline'
-
-
 def get_data(filepath):
     df = pd.read_csv(filepath)
     df['flares'].fillna('', inplace=True)
     assert df.isnull().any(axis=None) == False
 
     if 'sharp' in filepath:
+        sharp2smarp = np.load('datasets/sharp2smarp.npy', allow_pickle=True).item()
         for k, v in sharp2smarp.items():
             df[k] = df[k] * v['coef'] + v['intercept']
 
-    X = df[FEATURES].to_numpy()
+    X = df[cfg['features']].to_numpy()
     y = df['label'].to_numpy()
 
     return X, y
@@ -74,6 +70,13 @@ def load_dataset(dataset):
     #print(X_mean, X_std)
     Z_train = (X_train - X_mean) / X_std
     Z_test = (X_test - X_mean) / X_std
+
+    if cfg['smoke']:
+        N = 1000
+        Z_train = Z_train[:N]
+        y_train = y_train[:N]
+        Z_test = Z_test[:N]
+        y_test = y_test[:N]
 
     return Z_train, Z_test, y_train, y_test
 
@@ -112,7 +115,7 @@ def evaluate(dataset, model, save_dir='outputs'):
     if isinstance(estimator, DecisionTreeClassifier):
         if estimator.tree_.node_count < 16: # max depth 4
             plot_tree(estimator,
-                      feature_names=FEATURES,
+                      feature_names=cfg['features'],
                       filled=True)
             save_path = os.path.join(save_dir, 'tree.png')
             plt.savefig(save_path)
@@ -122,7 +125,7 @@ def evaluate(dataset, model, save_dir='outputs'):
         # Feature importance based on mean decrease in impurity
         fig, ax = plt.subplots()
         forest_importances = pd.Series(estimator.feature_importances_,
-                                       index=FEATURES)
+                                       index=cfg['features'])
         std = np.std([tree.feature_importances_ for tree in estimator.estimators_], axis=0)
         forest_importances.plot.bar(yerr=std, ax=ax)
         ax.set_title("Feature importances using MDI")
@@ -172,21 +175,22 @@ def tune(dataset, Model, param_space, method='grid', save_dir='outputs'):
     elif method == 'bayes':
         search = BayesSearchCV(pipe,
                                pipe_space,
-                               n_iter=50, # default 50 # 8 cause out of range
+                               n_iter=cfg['bayes']['n_iter'], # default 50 # 8 cause out of range
                                scoring=scorer,
-                               n_jobs=10, # at most n_points * cv jobs
-                               n_points=2, # number of points to run in parallel
+                               n_jobs=cfg['bayes']['n_jobs'], # at most n_points * cv jobs
+                               n_points=cfg['bayes']['n_points'], # number of points to run in parallel
                                #pre_dispatch default to'2*n_jobs'. Can't be None. See joblib
-                               cv=5, # if integer, StratifiedKFold is used by default
+                               cv=cfg['bayes']['cv'], # if integer, StratifiedKFold is used by default
                                refit=True, # default True
                                verbose=1)
         search.fit(X_train, y_train)
         # Partial Dependence plots of the (surrogate) objective function
-        _ = plot_objective(search.optimizer_results_[0],  # index out of range for QDA? If search space is empty, then the optimizer_results_ has length 1, but in plot_objective, optimizer_results_.models[-1] is called but models is an empty list. This should happen for all n_jobs though. Why didn't I come across it?
-                           dimensions=list(pipe_space.keys()),
-                           n_minimum_search=int(1e8))
-        plt.tight_layout()
-        plt.savefig(os.path.join(save_dir, 'parallel_dependence.png'))
+        # Not working for smoke test
+        #_ = plot_objective(search.optimizer_results_[0],  # index out of range for QDA? If search space is empty, then the optimizer_results_ has length 1, but in plot_objective, optimizer_results_.models[-1] is called but models is an empty list. This should happen for all n_jobs though. Why didn't I come across it?
+        #                   dimensions=list(pipe_space.keys()),
+        #                   n_minimum_search=int(1e8))
+        #plt.tight_layout()
+        #plt.savefig(os.path.join(save_dir, 'parallel_dependence.png'))
         #plt.show()
     else:
         raise
@@ -325,7 +329,7 @@ def sklearn_main(output_dir='outputs'):
 
             param_space = distributions[Model.__name__]
 
-            with mlflow.start_run(run_name=RUN_NAME) as run:
+            with mlflow.start_run(run_name=cfg['run_name']) as run:
                 best_model = tune(dataset, Model, param_space, method='bayes', save_dir=run_dir)
                 # Alternatively, param_space = grids[Model.__name__] and use 'grid' method
 
@@ -357,8 +361,44 @@ def sklearn_main(output_dir='outputs'):
 
 
 if __name__ == '__main__':
-    import cProfile, pstats
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-s', '--smoke', action='store_true',
+                        help='Smoke test')
+    parser.add_argument('-r', '--run_name', default='baseline',
+                        help='MLflow run name')
+    args = parser.parse_args()
+
+    cfg = {
+        'features': ['AREA', 'USFLUX', 'MEANGBZ', 'R_VALUE', 'FLARE_INDEX'],
+        'smoke': args.smoke,
+        'run_name': args.run_name,
+    }
+    if args.smoke:
+        cfg.update({
+            'experiment_name': 'smoke',
+            'output_root': 'outputs_smoke',
+            'bayes': {
+                'n_iter': 6,
+                'n_jobs': 2,
+                'n_points': 1,
+                'cv': 2,
+            },
+        })
+    else:
+        cfg.update({
+            'experiment_name': 'experiment',
+            'output_root': 'outputs',
+            'bayes': {
+                'n_iter': 50,
+                'n_jobs': 20,
+                'n_points': 2,
+                'cv': 10
+            },
+        })
+
+    mlflow.set_experiment(cfg['experiment_name'])
+    output_dir = os.path.join(cfg['output_root'], cfg['run_name'])
     with cProfile.Profile() as p:
-        sklearn_main(f'outputs/{RUN_NAME}')
+        sklearn_main(output_dir)
 
     pstats.Stats(p).sort_stats('cumtime').print_stats(50)

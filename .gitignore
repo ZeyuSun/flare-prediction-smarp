@@ -3,6 +3,7 @@ mlruns/
 archive/
 download/
 outputs/
+outputs_smoke/
 logs/
 # output_* will mess up the working directory
 
