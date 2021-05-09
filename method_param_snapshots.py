@@ -1,4 +1,5 @@
 import os
+import time
 import argparse
 import cProfile, pstats
 import numpy as np
@@ -240,8 +241,8 @@ def sklearn_main(output_dir='outputs'):
         #QuadraticDiscriminantAnalysis,
         SGDClassifier,
         #SVC,
-        DecisionTreeClassifier,
-        RandomForestClassifier,
+        #DecisionTreeClassifier,
+        #RandomForestClassifier,
         #ExtraTreesClassifier,
         #AdaBoostClassifier,
         #GradientBoostingClassifier,
@@ -293,11 +294,11 @@ def sklearn_main(output_dir='outputs'):
     distributions = {
         'SGDClassifier': {
             'loss': [
-                'hinge', # linear SVM
+                #'hinge', # linear SVM
                 'log', # logistic regression
             ],
             'alpha': (1e-6, 1e-1, 'log-uniform'),
-            'class_weight': 'balanced', # default to None (all classes are assumed to have weight one)
+            'class_weight': ['balanced'], # default to None (all classes are assumed to have weight one)
         },
         'QuadraticDiscriminantAnalysis': {
             # priors=None, # By default, the class proportions are inferred from training data
@@ -306,7 +307,7 @@ def sklearn_main(output_dir='outputs'):
             'max_depth': [8, 16, 32, 64, None], # default None
             #'min_samples_leaf': (0.000001, 0.01, 'log-uniform'),
             # 1 and 1.0 are different. Default 1
-            'class_weight': 'balanced', # default to None (all classes are assumed to have weight one)
+            'class_weight': ['balanced'], # default to None (all classes are assumed to have weight one)
         },
         'RandomForestClassifier': {
             'n_estimators': [100, 300, 1000],
@@ -330,6 +331,7 @@ def sklearn_main(output_dir='outputs'):
     results = []
     for dataset in ['sharp', 'combined']:
         for Model in Models:
+            t_start = time.time()
             run_dir = os.path.join(output_dir, f'{Model.__name__}_{dataset}')
             if not os.path.exists(run_dir):
                 os.makedirs(run_dir)
@@ -353,6 +355,7 @@ def sklearn_main(output_dir='outputs'):
             r = {
                 'dataset': dataset,
                 'model': Model.__name__,
+                'time': time.time() - t_start,
             }
             r.update(scores)
             r.update({
@@ -396,10 +399,10 @@ if __name__ == '__main__':
             'experiment_name': 'experiment',
             'output_root': 'outputs',
             'bayes': {
-                'n_iter': 20,
+                'n_iter': 50,
                 'n_jobs': 20,
-                'n_points': 2,
-                'cv': 10
+                'n_points': 4,
+                'cv': 10,
             },
         })
 
