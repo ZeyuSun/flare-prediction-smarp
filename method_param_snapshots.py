@@ -157,7 +157,7 @@ def tune(dataset, Model, param_space, method='grid', save_dir='outputs'):
     pipe_space = {'model__' + k: v for k, v in param_space.items()}
     pipe_space.update({
         #'rus__sampling_strategy': [1, 0.5, 0.1]  # desired ratio of minority:majority
-        'rus__sampling_strategy': (0.1, 1, 'uniform')
+        'rus__sampling_strategy': (0.1, 1.0, 'uniform')
     })
 
     if method == 'grid':
