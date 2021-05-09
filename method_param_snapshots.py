@@ -255,8 +255,11 @@ def sklearn_main(output_dir='outputs'):
                 'log', # logistic regression
             ],
             'alpha': [1e-6, 1e-4, 1e-2],
+            'class_weight': 'balanced', # default to None (all classes are assumed to have weight one)
         },
-        'QuadraticDiscriminantAnalysis': {},
+        'QuadraticDiscriminantAnalysis': {
+            # priors=None, # By default, the class proportions are inferred from training data
+        },
         'SVC': {
             'C': [0.1, 1, 10],
             'class_weight': [
@@ -268,11 +271,13 @@ def sklearn_main(output_dir='outputs'):
         'DecisionTreeClassifier': {
             'max_depth': [1, 2, 4, 8], # default None
             'min_samples_leaf': [1, 0.00001, 0.0001, 0.001, 0.01], # 1 and 1.0 are different. Default 1
+            'class_weight': 'balanced', # default None (all classes are assumed to have weight one)
         },
         'RandomForestClassifier': {
             'n_estimators': [10, 100, 1000],
             'max_depth': [None, 2, 4, 8],  # weak learners
             #'min_samples_split': 2,
+            'class_weight': ['balanced', 'balanced_subsample'],
         },
         'ExtraTreesClassifier': {
         },
@@ -292,20 +297,22 @@ def sklearn_main(output_dir='outputs'):
                 'log', # logistic regression
             ],
             'alpha': (1e-6, 1e-1, 'log-uniform'),
+            'class_weight': 'balanced', # default to None (all classes are assumed to have weight one)
         },
-        'QuadraticDiscriminantAnalysis': {},
+        'QuadraticDiscriminantAnalysis': {
+            # priors=None, # By default, the class proportions are inferred from training data
+        },
         'DecisionTreeClassifier': {
             'max_depth': [8, 16, 32, 64, None], # default None
             #'min_samples_leaf': (0.000001, 0.01, 'log-uniform'),
             # 1 and 1.0 are different. Default 1
+            'class_weight': 'balanced', # default to None (all classes are assumed to have weight one)
         },
         'RandomForestClassifier': {
-            'n_estimators': [30, 100, 300, 1000],
+            'n_estimators': [100, 300, 1000],
             #'max_depth': [None, 1, 2, 4, 8], # RF doesn't use weak learner
-            # Split a node if # of samples in the node >= min_samples_split and
-            # # of samples in each children after split >= min_samples_leaf (??)
-            #'min_samples_leaf': [1, 2],
-            #'min_samples_split': [4, 5, 6],
+            'class_weight': ['balanced', 'balanced_subsample'], # default to None (all classes are assumed to have weight one)
+            'oob_score': [True],
         },
 #         'ExtraTreesClassifier': {
 #         },
@@ -389,7 +396,7 @@ if __name__ == '__main__':
             'experiment_name': 'experiment',
             'output_root': 'outputs',
             'bayes': {
-                'n_iter': 50,
+                'n_iter': 20,
                 'n_jobs': 20,
                 'n_points': 2,
                 'cv': 10
