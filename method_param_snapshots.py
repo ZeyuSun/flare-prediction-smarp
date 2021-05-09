@@ -27,8 +27,9 @@ from metrics import tss, hss2, roc_auc_score, get_scores_from_cm
 
 sharp2smarp = np.load('datasets/sharp2smarp.npy', allow_pickle=True).item()
 FEATURES = ['AREA', 'USFLUX', 'MEANGBZ', 'R_VALUE', 'FLARE_INDEX']
-EXPERIMENT_NAME ='baseline'
+EXPERIMENT_NAME ='experiment'
 mlflow.set_experiment(EXPERIMENT_NAME)
+RUN_NAME = 'baseline'
 
 
 def get_data(filepath):
@@ -326,7 +327,7 @@ def sklearn_main(output_dir='outputs'):
 
             param_space = distributions[Model.__name__]
 
-            with mlflow.start_run(run_name=Model.__name__) as run:
+            with mlflow.start_run(run_name=RUN_NAME) as run:
                 best_model = tune(dataset, Model, param_space, method='bayes', save_dir=model_dir)
                 # Alternatively, param_space = grids[Model.__name__] and use 'grid' method
 
@@ -336,6 +337,7 @@ def sklearn_main(output_dir='outputs'):
                 mlflow.log_params({k.replace('model__', ''): v for k, v in
                     best_model.best_params_.items() if k.startswith('model__')})
                 mlflow.set_tag('estimator_name', Model.__name__)
+                mlflow.set_tag('dataset_name', dataset)
                 mlflow.log_metrics(scores)
                 #mlflow.sklearn.log_model(best_model, 'mlflow_model')
 
@@ -360,6 +362,6 @@ def sklearn_main(output_dir='outputs'):
 if __name__ == '__main__':
     import cProfile, pstats
     with cProfile.Profile() as p:
-        sklearn_main(f'outputs/{EXPERIMENT_NAME}')
+        sklearn_main(f'outputs/{RUN_NAME}')
     
     pstats.Stats(p).sort_stats('cumtime').print_stats(50)
