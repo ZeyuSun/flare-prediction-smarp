@@ -29,9 +29,6 @@ from xgboost import XGBClassifier
 from metrics import tss, hss2, roc_auc_score, get_scores_from_cm
 
 
-cfg = {
-    'features': ['AREA', 'USFLUX', 'MEANGBZ', 'R_VALUE', 'FLARE_INDEX'],
-}
 def get_data(filepath):
     df = pd.read_csv(filepath)
     df['flares'].fillna('', inplace=True)
@@ -54,28 +51,23 @@ def load_dataset(dataset):
     X_test1, y_test1 = get_data('datasets/smarp/test.csv')
     X_test2, y_test2 = get_data('datasets/sharp/test.csv')
 
-    #X = np.concatenate((X_train1, X_test1, X_train2, X_test2))
-    #y = np.concatenate((y_train1, y_test1, y_train2, y_test2))
+    X = np.concatenate((X_train1, X_test1, X_train2, X_test2))
+    y = np.concatenate((y_train1, y_test1, y_train2, y_test2))
 
-    #np.random.seed(0)
-    #test_idx = np.random.choice(len(y), len(y_test2), replace=False)
-    #train_idx = [i for i in range(len(y)) if i not in test_idx]
+    np.random.seed(0)
+    test_idx = np.random.choice(len(y), len(y_test2), replace=False)
+    train_idx = [i for i in range(len(y)) if i not in test_idx]
 
-    #X_train, y_train = X[train_idx], y[train_idx]
-    #X_test, y_test = X[test_idx], y[test_idx]
+    X_train, y_train = X[train_idx], y[train_idx]
+    X_test, y_test = X[test_idx], y[test_idx]
 
-    #if dataset == 'combined':
-    #    pass
-    #elif dataset == 'sharp':
-    #    train_idx = np.random.choice(train_idx, len(y_train2), replace=False)
-    #    X_train, y_train = X[train_idx], y[train_idx]
-    #else:
-    #    raise
-
-    from utils import draw_pairplot
-    draw_pairplot((X_train1, X_train2, X_test1, X_test2),
-                  ('SMARP_train', 'SHARP_train', 'SMARP_test', 'SHARP_test'),
-                  ['AREA', 'USFLUX', 'MEANGBZ', 'R_VALUE', 'FLARE_INDEX'])
+    if dataset == 'combined':
+        pass
+    elif dataset == 'sharp':
+        train_idx = np.random.choice(train_idx, len(y_train2), replace=False)
+        X_train, y_train = X[train_idx], y[train_idx]
+    else:
+        raise
 
     # standardization
     X_mean = X_train.mean(0)
@@ -162,8 +154,8 @@ def evaluate(dataset, model, save_dir='outputs'):
 def tune(dataset, Model, param_space, method='grid', save_dir='outputs'):
     X_train, X_test, y_train, y_test = load_dataset(dataset)
 
-    scorer = make_scorer(hss2)
-    #scorer = make_scorer(roc_auc_score, needs_threshold=True)
+    #scorer = make_scorer(hss2)
+    scorer = make_scorer(roc_auc_score, needs_threshold=True)
 
     pipe = Pipeline([
         ('rus', RandomUnderSampler()),
@@ -386,7 +378,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('-s', '--smoke', action='store_true',
                         help='Smoke test')
-    parser.add_argument('-r', '--run_name', default='baseline',
+    parser.add_argument('-r', '--run_name', default='shuffle_auc',
                         help='MLflow run name')
     args = parser.parse_args()
 
