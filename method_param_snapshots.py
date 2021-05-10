@@ -150,8 +150,8 @@ def evaluate(dataset, model, save_dir='outputs'):
 def tune(dataset, Model, param_space, method='grid', save_dir='outputs'):
     X_train, X_test, y_train, y_test = load_dataset(dataset)
 
-    scorer = make_scorer(hss2)
-    #scorer = make_scorer(roc_auc_score, needs_threshold=True)
+    #scorer = make_scorer(hss2)
+    scorer = make_scorer(roc_auc_score, needs_threshold=True)
 
     pipe = Pipeline([
         ('rus', RandomUnderSampler()),
@@ -374,7 +374,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('-s', '--smoke', action='store_true',
                         help='Smoke test')
-    parser.add_argument('-r', '--run_name', default='baseline_x',
+    parser.add_argument('-r', '--run_name', default='baseline_x_auc',
                         help='MLflow run name')
     args = parser.parse_args()
 
