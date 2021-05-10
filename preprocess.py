@@ -153,14 +153,14 @@ def select_per_arp(dataset, arpnum):
                                    (goes_ar['start_time'] <= t_after.strftime(GOES_TIME_FORMAT)),
                                    'goes_class'].tolist()
         flares_after = '|'.join(flares_after)
-        label = 'M' in flares_after or 'X' in flares_after
+        label = 'X' in flares_after
 
         flares_before = goes_ar.loc[(goes_ar['start_time'] >= t_before.strftime(GOES_TIME_FORMAT)) &
                                     (goes_ar['start_time'] <= t_end.strftime(GOES_TIME_FORMAT)),
                                     'goes_class'].tolist()
         flare_index = get_flare_index(flares_before)
         flares_before = '|'.join(flares_before)
-        if not label and ('M' in flares_before or 'X' in flares_before):
+        if not label and 'X' in flares_before:
             continue
 
         if df.loc[mask, 'image_nan'].sum() >= 1:
@@ -185,7 +185,7 @@ def select_per_arp(dataset, arpnum):
 
 
 def main(dataset, split_num=5, output_dir=None):
-    output_dir = output_dir or f'datasets/{dataset}'
+    output_dir = output_dir or f'datasets_x/{dataset}'
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
 
