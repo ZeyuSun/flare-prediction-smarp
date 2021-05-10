@@ -46,22 +46,26 @@ def get_data(filepath):
 
 
 def load_dataset(dataset):
-    if dataset == 'combined':
-        X_train1, y_train1 = get_data('datasets/smarp/train.csv')
-        X_train2, y_train2 = get_data('datasets/sharp/train.csv')
-        X_test1, y_test1 = get_data('datasets/smarp/test.csv')
-        X_test2, y_test2 = get_data('datasets/sharp/test.csv')
+    X_train1, y_train1 = get_data('datasets/smarp/train.csv')
+    X_train2, y_train2 = get_data('datasets/sharp/train.csv')
+    X_test1, y_test1 = get_data('datasets/smarp/test.csv')
+    X_test2, y_test2 = get_data('datasets/sharp/test.csv')
 
-        X_train = np.concatenate((X_train1, X_test1, X_train2))
-        y_train = np.concatenate((y_train1, y_test1, y_train2))
-        X_test = X_test2
-        y_test = y_test2
-    elif dataset == 'smarp':
-        X_train, y_train = get_data('datasets/smarp/train.csv')
-        X_test, y_test = get_data('datasets/smarp/test.csv')
+    X = np.concatenate((X_train1, X_test1, X_train2, X_test2))
+    y = np.concatenate((y_train1, y_test1, y_train2, y_test2))
+
+    np.random.seed(0)
+    test_idx = np.random.choice(len(y), len(y_test2), replace=False)
+    train_idx = [i for i in range(len(y)) if i not in test_idx]
+
+    X_train, y_train = X[train_idx], y[train_idx]
+    X_test, y_test = X[test_idx], y[test_idx]
+
+    if dataset == 'combined':
+        pass
     elif dataset == 'sharp':
-        X_train, y_train = get_data('datasets/sharp/train.csv')
-        X_test, y_test = get_data('datasets/sharp/test.csv')
+        train_idx = np.random.choice(train_idx, len(y_train2), replace=False)
+        X_train, y_train = X[train_idx], y[train_idx]
     else:
         raise
 
