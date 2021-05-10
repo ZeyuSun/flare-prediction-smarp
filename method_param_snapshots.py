@@ -35,7 +35,7 @@ def get_data(filepath):
     assert df.isnull().any(axis=None) == False
 
     if 'sharp' in filepath:
-        sharp2smarp = np.load('datasets/sharp2smarp.npy', allow_pickle=True).item()
+        sharp2smarp = np.load('datasets_x/sharp2smarp.npy', allow_pickle=True).item()
         for k, v in sharp2smarp.items():
             df[k] = df[k] * v['coef'] + v['intercept']
 
@@ -47,21 +47,21 @@ def get_data(filepath):
 
 def load_dataset(dataset):
     if dataset == 'combined':
-        X_train1, y_train1 = get_data('datasets/smarp/train.csv')
-        X_train2, y_train2 = get_data('datasets/sharp/train.csv')
-        X_test1, y_test1 = get_data('datasets/smarp/test.csv')
-        X_test2, y_test2 = get_data('datasets/sharp/test.csv')
+        X_train1, y_train1 = get_data('datasets_x/smarp/train.csv')
+        X_train2, y_train2 = get_data('datasets_x/sharp/train.csv')
+        X_test1, y_test1 = get_data('datasets_x/smarp/test.csv')
+        X_test2, y_test2 = get_data('datasets_x/sharp/test.csv')
 
         X_train = np.concatenate((X_train1, X_test1, X_train2))
         y_train = np.concatenate((y_train1, y_test1, y_train2))
         X_test = X_test2
         y_test = y_test2
     elif dataset == 'smarp':
-        X_train, y_train = get_data('datasets/smarp/train.csv')
-        X_test, y_test = get_data('datasets/smarp/test.csv')
+        X_train, y_train = get_data('datasets_x/smarp/train.csv')
+        X_test, y_test = get_data('datasets_x/smarp/test.csv')
     elif dataset == 'sharp':
-        X_train, y_train = get_data('datasets/sharp/train.csv')
-        X_test, y_test = get_data('datasets/sharp/test.csv')
+        X_train, y_train = get_data('datasets_x/sharp/train.csv')
+        X_test, y_test = get_data('datasets_x/sharp/test.csv')
     else:
         raise
 
@@ -374,7 +374,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('-s', '--smoke', action='store_true',
                         help='Smoke test')
-    parser.add_argument('-r', '--run_name', default='baseline',
+    parser.add_argument('-r', '--run_name', default='baseline_x',
                         help='MLflow run name')
     args = parser.parse_args()
 
