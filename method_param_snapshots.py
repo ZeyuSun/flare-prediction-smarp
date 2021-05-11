@@ -46,22 +46,23 @@ def get_data(filepath):
 
 
 def load_dataset(dataset):
-    if dataset == 'combined':
-        X_train1, y_train1 = get_data('datasets_quiet/smarp/train.csv')
-        X_train2, y_train2 = get_data('datasets_quiet/sharp/train.csv')
-        X_test1, y_test1 = get_data('datasets_quiet/smarp/test.csv')
-        X_test2, y_test2 = get_data('datasets_quiet/sharp/test.csv')
+    X_train1, y_train1 = get_data('datasets_quiet/smarp/train.csv')
+    X_test1, y_test1 = get_data('datasets_quiet/smarp/test.csv')
 
+    X_train2, y_train2 = get_data('datasets_quiet/sharp/train.csv')
+    X_test2, y_test2 = get_data('datasets_quiet/sharp/test.csv')
+
+    if dataset == 'combined':
         X_train = np.concatenate((X_train1, X_test1, X_train2))
         y_train = np.concatenate((y_train1, y_test1, y_train2))
         X_test = X_test2
         y_test = y_test2
     elif dataset == 'smarp':
-        X_train, y_train = get_data('datasets_quiet/smarp/train.csv')
-        X_test, y_test = get_data('datasets_quiet/smarp/test.csv')
+        X_train, y_train = X_train1, y_train1
+        X_test, y_test = X_test1, y_test1
     elif dataset == 'sharp':
-        X_train, y_train = get_data('datasets_quiet/sharp/train.csv')
-        X_test, y_test = get_data('datasets_quiet/sharp/test.csv')
+        X_train, y_train = X_train2, y_train2
+        X_test, y_test = X_test2, y_test2
     else:
         raise
 
@@ -374,7 +375,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('-s', '--smoke', action='store_true',
                         help='Smoke test')
-    parser.add_argument('-r', '--run_name', default='baseline_quiet',
+    parser.add_argument('-r', '--run_name', default='baseline_quiet_balanced',
                         help='MLflow run name')
     args = parser.parse_args()
 
