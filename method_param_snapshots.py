@@ -82,13 +82,52 @@ def load_dataset(dataset):
     return Z_train, Z_test, y_train, y_test
 
 
+def fit_threshold(model, X, y):
+    """Fit the decision threshold for the model
+
+    Set a `thresh` attribute for the model. Threshold moving is particularly
+    useful for imbalanced classification. To use the adjusted threshold, use
+    `decision_function` or `predict_proba` and `thresh` for prediction.
+    Do not use `predict` or `score` method.
+    """
+
+    if hasattr(model, 'decision_function'):
+        y_score = model.decision_function(X)
+    elif hasattr(model, 'predict_proba'):
+        y_score = model.predict_proba(X)
+    else:
+        raise
+    fpr, tpr, thresh = roc_curve(y, y_score)
+    i = np.argmax(tpr - fpr)  # tss = tpr - fpr
+    model.thresh = thresh[i]
+
+    # closure can't be pickled
+    # self is seen as a positional arg
+    # model is local. (LEGB rule)
+    #def predict(X):
+    #    if hasattr(model, 'decision_function'):
+    #        y_pred = (model.decision_function(X) > model.thresh).astype(int)
+    #    elif hasattr(model, 'predict_proba'):
+    #        y_pred = (model.predict_proba(X) > model.thresh).astype(int)
+    #    else:
+    #        raise
+    #    return y_pred
+
+    #model.predict = predict
+
+
 def evaluate(dataset, model, save_dir='outputs'):
     if isinstance(model, str):
         import pickle
         model = pickle.load(model)
 
     X_train, X_test, y_train, y_test = load_dataset(dataset)
-    y_pred = model.predict(X_test)
+    if hasattr(model, 'decision_function'):
+        y_pred = (model.decision_function(X_test) > model.thresh).astype(int)
+    elif hasattr(model, 'predict_proba'):
+        y_pred = (model.predict_proba(X_test) > model.thresh).astype(int)
+    else:
+        raise
     cm = confusion_matrix(y_test, y_pred)
 
     plot_confusion_matrix(model, X_test, y_test)
@@ -185,6 +224,7 @@ def tune(dataset, Model, param_space, method='grid', save_dir='outputs'):
                                refit=True, # default True
                                verbose=1)
         search.fit(X_train, y_train)
+        fit_threshold(search, X_train, y_train)
         # Partial Dependence plots of the (surrogate) objective function
         # Not working for smoke test
         #_ = plot_objective(search.optimizer_results_[0],  # index out of range for QDA? If search space is empty, then the optimizer_results_ has length 1, but in plot_objective, optimizer_results_.models[-1] is called but models is an empty list. This should happen for all n_jobs though. Why didn't I come across it?
@@ -374,7 +414,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('-s', '--smoke', action='store_true',
                         help='Smoke test')
-    parser.add_argument('-r', '--run_name', default='baseline_2h_auc',
+    parser.add_argument('-r', '--run_name', default='baseline_2h_auc_thresh',
                         help='MLflow run name')
     args = parser.parse_args()
 
