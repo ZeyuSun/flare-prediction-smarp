@@ -47,21 +47,21 @@ def get_data(filepath):
 
 def load_dataset(dataset):
     if dataset == 'combined':
-        X_train1, y_train1 = get_data('datasets/smarp/train.csv')
-        X_train2, y_train2 = get_data('datasets/sharp/train.csv')
-        X_test1, y_test1 = get_data('datasets/smarp/test.csv')
-        X_test2, y_test2 = get_data('datasets/sharp/test.csv')
+        X_train1, y_train1 = get_data('datasets_2h/smarp/train.csv')
+        X_train2, y_train2 = get_data('datasets_2h/sharp/train.csv')
+        X_test1, y_test1 = get_data('datasets_2h/smarp/test.csv')
+        X_test2, y_test2 = get_data('datasets_2h/sharp/test.csv')
 
         X_train = np.concatenate((X_train1, X_test1, X_train2))
         y_train = np.concatenate((y_train1, y_test1, y_train2))
         X_test = X_test2
         y_test = y_test2
     elif dataset == 'smarp':
-        X_train, y_train = get_data('datasets/smarp/train.csv')
-        X_test, y_test = get_data('datasets/smarp/test.csv')
+        X_train, y_train = get_data('datasets_2h/smarp/train.csv')
+        X_test, y_test = get_data('datasets_2h/smarp/test.csv')
     elif dataset == 'sharp':
-        X_train, y_train = get_data('datasets/sharp/train.csv')
-        X_test, y_test = get_data('datasets/sharp/test.csv')
+        X_train, y_train = get_data('datasets_2h/sharp/train.csv')
+        X_test, y_test = get_data('datasets_2h/sharp/test.csv')
     else:
         raise
 
