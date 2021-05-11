@@ -160,7 +160,8 @@ def select_per_arp(dataset, arpnum):
                                     'goes_class'].tolist()
         flare_index = get_flare_index(flares_before)
         flares_before = '|'.join(flares_before)
-        if not label and ('M' in flares_before or 'X' in flares_before):
+        if not label and (len(flares_before) > 0  or len(flares_after) > 0):
+            # Only select queit samples for the negative class
             continue
 
         if df.loc[mask, 'image_nan'].sum() >= 1:
@@ -185,7 +186,7 @@ def select_per_arp(dataset, arpnum):
 
 
 def main(dataset, split_num=5, output_dir=None):
-    output_dir = output_dir or f'datasets/{dataset}'
+    output_dir = output_dir or f'datasets_quiet/{dataset}'
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
 
