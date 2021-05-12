@@ -129,6 +129,7 @@ def select_per_arp(dataset, arpnum):
     OBS_TIME = timedelta(days=1)  # observation time
     VAL_TIME = timedelta(days=1)  # prediction validity period
     samples = []
+    counter = defaultdict(int)
     for idx in df.index:
         t_start = df.loc[idx, 'T_REC']  # sequence start
         t_end = t_start + OBS_TIME  # sequence end; flare issuance time
@@ -136,15 +137,18 @@ def select_per_arp(dataset, arpnum):
         if len(df.loc[mask]) <= 14:
             # Allow for at most 2 missing frames
             # There are 16 frames (1+24*60/96) if no frame is missing
+            counter['mis_rec'] += 1
             continue
 
         if (df.loc[mask, KEYWORDS].isna().sum(axis=0) > 2).any():
             # Allow for at most 2 missing entries for each feature column
             #print(df.loc[mask, KEYWORDS].isna())
+            counter['nan_val'] += 1
             continue
 
         if df.loc[mask, KEYWORDS].iloc[-1,:].isna().any():
             # The last record is used in snapshot datasets so it can't be nan
+            counter['nan_val_last'] += 1
             continue
 
         t_after = t_end + VAL_TIME
@@ -161,12 +165,15 @@ def select_per_arp(dataset, arpnum):
         flare_index = get_flare_index(flares_before)
         flares_before = '|'.join(flares_before)
         if not label and ('M' in flares_before or 'X' in flares_before):
+            counter['pos'] += 1
             continue
 
         if df.loc[mask, 'image_nan'].sum() >= 1:
+            counter['nan_img'] += 1
             continue
 
         if df.loc[mask, 'image_nan'].iloc[-1]:
+            counter['nan_img_last'] += 1
             continue
 
         sample = {
@@ -180,7 +187,7 @@ def select_per_arp(dataset, arpnum):
         }
         sample.update({k: df.loc[mask, k].iloc[-1] for k in KEYWORDS})
         samples.append(sample)
-    logging.info('{} {}: {}/{} sequences extracted'.format(get_prefix(dataset), arpnum, len(samples), len(df)))
+    logging.info('{} {}: {}/{} sequences extracted. {}'.format(get_prefix(dataset), arpnum, len(samples), len(df), dict(counter)))
     return samples
 
 
