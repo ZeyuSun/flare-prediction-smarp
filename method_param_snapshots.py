@@ -83,6 +83,52 @@ def load_dataset(dataset):
     return Z_train, Z_test, y_train, y_test
 
 
+def fit_threshold(model, X, y):
+    """Fit the decision threshold for the model
+
+    Set a `thresh` attribute for the model. Threshold moving is particularly
+    useful for imbalanced classification. To use the adjusted threshold, use
+    `decision_function` or `predict_proba` and `thresh` for prediction.
+    Do not use `predict` or `score` method.
+    """
+
+    if hasattr(model, 'decision_function'):
+        y_score = model.decision_function(X)
+    elif hasattr(model, 'predict_proba'):
+        y_score = model.predict_proba(X).max(axis=1)
+    else:
+        raise
+    fpr, tpr, thresh = roc_curve(y, y_score)
+    i = np.argmax(tpr - fpr)  # tss = tpr - fpr
+    #WARNING: thresh can be a coarse grid, e.g., when y_score taking 0 and 1
+    model.thresh = thresh[i]
+    mlflow.log_metric('thresh', model.thresh)
+
+    # closure can't be pickled
+    # self is seen as a positional arg
+    # model is local. (LEGB rule)
+    #def predict(X):
+    #    if hasattr(model, 'decision_function'):
+    #        y_pred = (model.decision_function(X) > model.thresh).astype(int)
+    #    elif hasattr(model, 'predict_proba'):
+    #        y_pred = (model.predict_proba(X) > model.thresh).astype(int)
+    #    else:
+    #        raise
+    #    return y_pred
+
+    #model.predict = predict
+
+
+def predict_thresholded(model, X):
+    if hasattr(model, 'decision_function'):
+        y_pred = (model.decision_function(X) > model.thresh)
+    elif hasattr(model, 'predict_proba'):
+        y_pred = (model.predict_proba(X).max(axis=1) > model.thresh)
+    else:
+        raise
+    return y_pred
+
+
 def evaluate(dataset, model, save_dir='outputs'):
     if isinstance(model, str):
         import pickle
@@ -90,6 +136,7 @@ def evaluate(dataset, model, save_dir='outputs'):
 
     X_train, X_test, y_train, y_test = load_dataset(dataset)
     y_pred = model.predict(X_test)
+    y_pred_th = predict_thresholded(model, X_test)
     cm = confusion_matrix(y_test, y_pred)
 
     plot_confusion_matrix(model, X_test, y_test)
@@ -109,6 +156,8 @@ def evaluate(dataset, model, save_dir='outputs'):
 
     scores = get_scores_from_cm(cm)
     scores.update({'auc': auc})
+    scores_th = get_scores_from_cm(confusion_matrix(y_test, y_pred_th))
+    scores.update({k+'_th': v for k, v in scores_th.items()})
     save_path = os.path.join(save_dir, 'best_model_test_scores.md')
     pd.DataFrame(scores, index=[0,]).to_markdown(save_path, tablefmt='grid')
 
@@ -151,8 +200,8 @@ def evaluate(dataset, model, save_dir='outputs'):
 def tune(dataset, Model, param_space, method='grid', save_dir='outputs'):
     X_train, X_test, y_train, y_test = load_dataset(dataset)
 
-    scorer = make_scorer(hss2)
-    #scorer = make_scorer(roc_auc_score, needs_threshold=True)
+    #scorer = make_scorer(hss2)
+    scorer = make_scorer(roc_auc_score, needs_threshold=True)
 
     pipe = Pipeline([
         #('rus', RandomUnderSampler()),
@@ -174,6 +223,7 @@ def tune(dataset, Model, param_space, method='grid', save_dir='outputs'):
                               refit=True, # default True
                               verbose=1)
         search.fit(X_train, y_train)
+        fit_threshold(search, X_train, y_train)
     elif method == 'bayes':
         search = BayesSearchCV(pipe,
                                pipe_space,
@@ -186,6 +236,7 @@ def tune(dataset, Model, param_space, method='grid', save_dir='outputs'):
                                refit=True, # default True
                                verbose=1)
         search.fit(X_train, y_train)
+        fit_threshold(search, X_train, y_train)
         # Partial Dependence plots of the (surrogate) objective function
         # Not working for smoke test
         #_ = plot_objective(search.optimizer_results_[0],  # index out of range for QDA? If search space is empty, then the optimizer_results_ has length 1, but in plot_objective, optimizer_results_.models[-1] is called but models is an empty list. This should happen for all n_jobs though. Why didn't I come across it?
@@ -239,15 +290,15 @@ def sklearn_main(output_dir='outputs'):
 
     Models = [
         #KNeighborsClassifier,
-        #QuadraticDiscriminantAnalysis,
+        QuadraticDiscriminantAnalysis,
         SGDClassifier,
         #SVC,
-        #DecisionTreeClassifier,
-        #RandomForestClassifier,
-        #ExtraTreesClassifier,
-        #AdaBoostClassifier,
-        #GradientBoostingClassifier,
-        #HistGradientBoostingClassifier,
+        DecisionTreeClassifier,
+        RandomForestClassifier,
+        ExtraTreesClassifier,
+        AdaBoostClassifier,
+        GradientBoostingClassifier,
+        HistGradientBoostingClassifier,
     ]
 
     grids = {
@@ -302,6 +353,7 @@ def sklearn_main(output_dir='outputs'):
             'class_weight': ['balanced'], # default to None (all classes are assumed to have weight one)
         },
         'QuadraticDiscriminantAnalysis': {
+            'reg_param': [0],  # BayesSearchCV require
             # priors=None, # By default, the class proportions are inferred from training data
         },
         'DecisionTreeClassifier': {
@@ -311,17 +363,21 @@ def sklearn_main(output_dir='outputs'):
             'class_weight': ['balanced'], # default to None (all classes are assumed to have weight one)
         },
         'RandomForestClassifier': {
-            'n_estimators': [100, 300, 1000],
+            'n_estimators': [50, 100, 300],
             #'max_depth': [None, 1, 2, 4, 8], # RF doesn't use weak learner
             'class_weight': ['balanced', 'balanced_subsample'], # default to None (all classes are assumed to have weight one)
             'oob_score': [True],
         },
-#         'ExtraTreesClassifier': {
-#         },
-#         'AdaBoostClassifier': {
-#         },
-#         'GradientBoostingClassifier': {
-#         },
+        'ExtraTreesClassifier': {
+            'n_estimators': [100, 300, 1000],
+        },
+        'AdaBoostClassifier': {
+            'n_estimators': [50],
+            'learning_rate': [1],
+        },
+        'GradientBoostingClassifier': {
+            'learning_rate': [0.1],
+        },
         'HistGradientBoostingClassifier': {
             'learning_rate': (0.0001, 0.1, 'log-uniform'),
             'max_iter': [50, 100, 200, 400, 1000],
@@ -330,7 +386,7 @@ def sklearn_main(output_dir='outputs'):
     }
 
     results = []
-    for dataset in ['sharp', 'combined']:
+    for dataset in ['smarp', 'sharp', 'combined']:
         for Model in Models:
             t_start = time.time()
             run_dir = os.path.join(output_dir, f'{Model.__name__}_{dataset}')
@@ -375,7 +431,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('-s', '--smoke', action='store_true',
                         help='Smoke test')
-    parser.add_argument('-r', '--run_name', default='baseline',
+    parser.add_argument('-r', '--run_name', default='alpha_auc',
                         help='MLflow run name')
     args = parser.parse_args()
 
