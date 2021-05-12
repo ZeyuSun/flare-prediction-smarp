@@ -206,9 +206,24 @@ def main(dataset, split_num=5, output_dir=None):
     dfs = [pd.read_csv(os.path.join(output_dir, f'{dataset}_{key}.csv'))
            for key in range(split_num)]
     train_df = pd.concat(dfs[:split_num-1]).reset_index(drop=True) #TODO: sort by dataset/arpnum
+    train_df = rus(train_df, seed=0)
     test_df = dfs[-1]
+    test_df = rus(test_df, seed=1)
+
     train_df.to_csv(os.path.join(output_dir, 'train.csv'), index=False)
     test_df.to_csv(os.path.join(output_dir, 'test.csv'), index=False)
+
+
+def rus(df, seed=None):
+    np.random.seed(seed)
+    pos_mask = df['label'].to_numpy()
+    neg_mask = (~df['label']).to_numpy()
+    drop_idx = np.random.choice(np.nonzero(neg_mask)[0],
+                                size=neg_mask.sum() - pos_mask.sum(),
+                                replace=False)
+    neg_mask[drop_idx] = False
+    df = df.iloc[pos_mask | neg_mask].reset_index(drop=True)
+    return df
 
 
 def test_seed():
