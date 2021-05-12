@@ -46,22 +46,23 @@ def get_data(filepath):
 
 
 def load_dataset(dataset):
-    if dataset == 'combined':
-        X_train1, y_train1 = get_data('datasets/smarp/train.csv')
-        X_train2, y_train2 = get_data('datasets/sharp/train.csv')
-        X_test1, y_test1 = get_data('datasets/smarp/test.csv')
-        X_test2, y_test2 = get_data('datasets/sharp/test.csv')
+    X_train1, y_train1 = get_data('datasets/smarp/train.csv')
+    X_test1, y_test1 = get_data('datasets/smarp/test.csv')
 
+    X_train2, y_train2 = get_data('datasets/sharp/train.csv')
+    X_test2, y_test2 = get_data('datasets/sharp/test.csv')
+
+    if dataset == 'combined':
         X_train = np.concatenate((X_train1, X_test1, X_train2))
         y_train = np.concatenate((y_train1, y_test1, y_train2))
         X_test = X_test2
         y_test = y_test2
     elif dataset == 'smarp':
-        X_train, y_train = get_data('datasets/smarp/train.csv')
-        X_test, y_test = get_data('datasets/smarp/test.csv')
+        X_train, y_train = X_train1, y_train1
+        X_test, y_test = X_test1, y_test1
     elif dataset == 'sharp':
-        X_train, y_train = get_data('datasets/sharp/train.csv')
-        X_test, y_test = get_data('datasets/sharp/test.csv')
+        X_train, y_train = X_train2, y_train2
+        X_test, y_test = X_test2, y_test2
     else:
         raise
 
@@ -154,14 +155,14 @@ def tune(dataset, Model, param_space, method='grid', save_dir='outputs'):
     #scorer = make_scorer(roc_auc_score, needs_threshold=True)
 
     pipe = Pipeline([
-        ('rus', RandomUnderSampler()),
+        #('rus', RandomUnderSampler()),
         #('scaler', StandardScaler()), # already did it in loading
         ('model', Model())
     ])
     pipe_space = {'model__' + k: v for k, v in param_space.items()}
     pipe_space.update({
         #'rus__sampling_strategy': [1, 0.5, 0.1]  # desired ratio of minority:majority
-        'rus__sampling_strategy': (0.1, 1.0, 'uniform')
+        #'rus__sampling_strategy': (0.1, 1.0, 'uniform')
     })
 
     if method == 'grid':
@@ -344,7 +345,7 @@ def sklearn_main(output_dir='outputs'):
 
                 scores = evaluate(dataset, best_model, save_dir=run_dir)
 
-                mlflow.log_param('sampling_strategy', best_model.best_params_['rus__sampling_strategy'])
+                #mlflow.log_param('sampling_strategy', best_model.best_params_['rus__sampling_strategy'])
                 mlflow.log_params({k.replace('model__', ''): v for k, v in
                     best_model.best_params_.items() if k.startswith('model__')})
                 mlflow.set_tag('estimator_name', Model.__name__)
