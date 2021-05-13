@@ -46,26 +46,24 @@ def get_data(filepath):
     return X, y
 
 
-def load_dataset(dataset):
+def load_dataset(dataset_size):
     X_train1, y_train1 = get_data('datasets/smarp/train.csv')
     X_test1, y_test1 = get_data('datasets/smarp/test.csv')
 
     X_train2, y_train2 = get_data('datasets/sharp/train.csv')
     X_test2, y_test2 = get_data('datasets/sharp/test.csv')
 
-    if dataset == 'combined':
-        X_train = np.concatenate((X_train1, X_test1, X_train2))
-        y_train = np.concatenate((y_train1, y_test1, y_train2))
-        X_test = X_test2
-        y_test = y_test2
-    elif dataset == 'smarp':
-        X_train, y_train = X_train1, y_train1
-        X_test, y_test = X_test1, y_test1
-    elif dataset == 'sharp':
-        X_train, y_train = X_train2, y_train2
-        X_test, y_test = X_test2, y_test2
-    else:
-        raise
+    X = np.concatenate((X_train1, X_test1, X_train2, X_test2))
+    y = np.concatenate((y_train1, y_test1, y_train2, y_test2))
+
+    np.random.seed(0)
+    test_idx = np.random.choice(len(y), len(y_test2), replace=False)
+    train_idx = [i for i in range(len(y)) if i not in test_idx]
+    train_idx = np.random.choice(train_idx, int(len(train_idx) * dataset_size),
+                                 replace=False)
+
+    X_train, y_train = X[train_idx], y[train_idx]
+    X_test, y_test = X[test_idx], y[test_idx]
 
     # standardization
     X_mean = X_train.mean(0)
@@ -130,12 +128,12 @@ def predict_thresholded(model, X):
     return y_pred
 
 
-def evaluate(dataset, model, save_dir='outputs'):
+def evaluate(dataset_size, model, save_dir='outputs'):
     if isinstance(model, str):
         import pickle
         model = pickle.load(model)
 
-    X_train, X_test, y_train, y_test = load_dataset(dataset)
+    X_train, X_test, y_train, y_test = load_dataset(dataset_size)
     y_pred = model.predict(X_test)
     y_pred_th = predict_thresholded(model, X_test)
     cm = confusion_matrix(y_test, y_pred)
@@ -199,8 +197,8 @@ def evaluate(dataset, model, save_dir='outputs'):
     return scores
 
 
-def tune(dataset, Model, param_space, method='grid', save_dir='outputs'):
-    X_train, X_test, y_train, y_test = load_dataset(dataset)
+def tune(dataset_size, Model, param_space, method='grid', save_dir='outputs'):
+    X_train, X_test, y_train, y_test = load_dataset(dataset_size)
 
     #scorer = make_scorer(hss2)
     scorer = make_scorer(roc_auc_score, needs_threshold=True)
@@ -266,7 +264,7 @@ def tune(dataset, Model, param_space, method='grid', save_dir='outputs'):
     df.to_markdown(save_path, tablefmt='grid')
     mlflow.log_artifact(save_path)
 
-    print(f'CV results of {Model.__name__} on {dataset}:')
+    print(f'CV results of {Model.__name__} on {dataset_size}:')
     print(df.to_markdown(tablefmt='grid'))
     print()
 
@@ -388,31 +386,31 @@ def sklearn_main(output_dir='outputs'):
     }
 
     results = []
-    for dataset in ['smarp', 'sharp', 'combined']:
+    for dataset_size in [0.3, 0.4, 0.6, 0.8, 1.0]:
         for Model in Models:
             t_start = time.time()
-            run_dir = os.path.join(output_dir, f'{Model.__name__}_{dataset}')
+            run_dir = os.path.join(output_dir, f'{Model.__name__}_{dataset_size}')
             if not os.path.exists(run_dir):
                 os.makedirs(run_dir)
 
             param_space = distributions[Model.__name__]
 
             with mlflow.start_run(run_name=cfg['run_name']) as run:
-                best_model = tune(dataset, Model, param_space, method='bayes', save_dir=run_dir)
+                best_model = tune(dataset_size, Model, param_space, method='bayes', save_dir=run_dir)
                 # Alternatively, param_space = grids[Model.__name__] and use 'grid' method
 
-                scores = evaluate(dataset, best_model, save_dir=run_dir)
+                scores = evaluate(dataset_size, best_model, save_dir=run_dir)
 
                 #mlflow.log_param('sampling_strategy', best_model.best_params_['rus__sampling_strategy'])
                 mlflow.log_params({k.replace('model__', ''): v for k, v in
                     best_model.best_params_.items() if k.startswith('model__')})
                 mlflow.set_tag('estimator_name', Model.__name__)
-                mlflow.set_tag('dataset_name', dataset)
+                mlflow.set_tag('dataset_name', dataset_size)
                 mlflow.log_metrics(scores)
                 #mlflow.sklearn.log_model(best_model, 'mlflow_model')
 
             r = {
-                'dataset': dataset,
+                'dataset_size': dataset_size,
                 'model': Model.__name__,
                 'time': time.time() - t_start,
             }
@@ -433,7 +431,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('-s', '--smoke', action='store_true',
                         help='Smoke test')
-    parser.add_argument('-r', '--run_name', default='alpha_no_flareindex_no_smallflares',
+    parser.add_argument('-r', '--run_name', default='alpha_size',
                         help='MLflow run name')
     args = parser.parse_args()
 
