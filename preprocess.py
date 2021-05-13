@@ -164,7 +164,8 @@ def select_per_arp(dataset, arpnum):
                                     'goes_class'].tolist()
         flare_index = get_flare_index(flares_before)
         flares_before = '|'.join(flares_before)
-        if not label and ('M' in flares_before or 'X' in flares_before):
+        if not label and (len(flares_before) > 0  or len(flares_after) > 0):
+            # Only select queit samples for the negative class
             counter['pos'] += 1
             continue
 

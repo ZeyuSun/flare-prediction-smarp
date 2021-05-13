@@ -295,11 +295,11 @@ def sklearn_main(output_dir='outputs'):
         QuadraticDiscriminantAnalysis,
         SGDClassifier,
         #SVC,
-        DecisionTreeClassifier,
+        #DecisionTreeClassifier,
         RandomForestClassifier,
-        ExtraTreesClassifier,
-        AdaBoostClassifier,
-        GradientBoostingClassifier,
+        #ExtraTreesClassifier,
+        #AdaBoostClassifier,
+        #GradientBoostingClassifier,
         HistGradientBoostingClassifier,
     ]
 
@@ -433,7 +433,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('-s', '--smoke', action='store_true',
                         help='Smoke test')
-    parser.add_argument('-r', '--run_name', default='alpha_no_flareindex',
+    parser.add_argument('-r', '--run_name', default='alpha_no_flareindex_no_smallflares',
                         help='MLflow run name')
     args = parser.parse_args()
 
