@@ -9,6 +9,7 @@ import plotly.express as px
 import wandb
 import joblib
 import mlflow
+import graphviz
 from skopt import BayesSearchCV
 from skopt.plots import plot_objective
 from sklearn.preprocessing import StandardScaler
@@ -21,7 +22,7 @@ from sklearn.discriminant_analysis import QuadraticDiscriminantAnalysis
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.linear_model import SGDClassifier
 from sklearn.svm import SVC
-from sklearn.tree import DecisionTreeClassifier, plot_tree
+from sklearn.tree import DecisionTreeClassifier, export_graphviz
 from sklearn.experimental import enable_hist_gradient_boosting
 from sklearn.ensemble import RandomForestClassifier, ExtraTreesClassifier, AdaBoostClassifier, GradientBoostingClassifier, HistGradientBoostingClassifier
 from xgboost import XGBClassifier
@@ -164,14 +165,15 @@ def evaluate(dataset, model, save_dir='outputs'):
     # Inspect
     estimator = model.best_estimator_['model']
     if isinstance(estimator, DecisionTreeClassifier):
-        if estimator.tree_.node_count < 16: # max depth 4
-            plot_tree(estimator,
-                      feature_names=cfg['features'],
-                      filled=True)
-            save_path = os.path.join(save_dir, 'tree.png')
-            plt.savefig(save_path)
-            mlflow.log_artifact(save_path)
-            mlflow.log_figure(plt.gcf(), 'tree_figure.png')
+        dot_data = export_graphviz(estimator, out_file=None,
+                                   max_depth=3,
+                                   feature_names=cfg['features'],
+                                   class_names=True,
+                                   filled=True)
+        graph = graphviz.Source(dot_data, format='png')
+        save_path = os.path.join(save_dir, 'tree_graphviz.png')
+        graph.render(save_path)
+        mlflow.log_artifact(save_path)
     if isinstance(estimator, RandomForestClassifier):
         # Feature importance based on mean decrease in impurity
         fig, ax = plt.subplots()
@@ -431,12 +433,12 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('-s', '--smoke', action='store_true',
                         help='Smoke test')
-    parser.add_argument('-r', '--run_name', default='alpha_auc',
+    parser.add_argument('-r', '--run_name', default='alpha_no_flareindex',
                         help='MLflow run name')
     args = parser.parse_args()
 
     cfg = {
-        'features': ['AREA', 'USFLUX', 'MEANGBZ', 'R_VALUE', 'FLARE_INDEX'],
+        'features': ['AREA', 'USFLUX', 'MEANGBZ', 'R_VALUE'],
         'smoke': args.smoke,
         'run_name': args.run_name,
     }
