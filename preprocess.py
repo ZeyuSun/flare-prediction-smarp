@@ -157,7 +157,7 @@ def select_per_arp(dataset, arpnum):
                                    (goes_ar['start_time'] <= t_after.strftime(GOES_TIME_FORMAT)),
                                    'goes_class'].tolist()
         flares_after = '|'.join(flares_after)
-        label = 'M' in flares_after or 'X' in flares_after
+        label = 'X' in flares_after
 
         flares_before = goes_ar.loc[(goes_ar['start_time'] >= t_before.strftime(GOES_TIME_FORMAT)) &
                                     (goes_ar['start_time'] <= t_end.strftime(GOES_TIME_FORMAT)),
@@ -240,4 +240,4 @@ def test_seed():
 if __name__ == '__main__':
     test_seed()
     for dataset in ['smarp', 'sharp']:
-        main(dataset, split_num=5, output_dir=None)
+        main(dataset, split_num=3, output_dir=None)
