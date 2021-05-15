@@ -89,7 +89,8 @@ def query(filepaths, redis=True):
             keys = [filepaths[i] for i in indices]
             values = [toRedis(fits_open(k).astype(np.float16)) for k in keys]
             r.mset(dict(zip(keys, values)))
-            buff = [values[i] if i in indices else b for i, b in enumerate(buff)]
+            for j, i in enumerate(indices):
+                buff[i] = values[j]
         data_arrays = [fromRedis(b).astype(np.float32) for b in buff]
     else:
         data_arrays = [fits_open(k) for k in filepaths]

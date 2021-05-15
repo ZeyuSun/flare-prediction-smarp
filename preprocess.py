@@ -135,7 +135,7 @@ def select_per_arp(dataset, arpnum):
         t_end = t_start + OBS_TIME  # sequence end; flare issuance time
         mask = (df['T_REC'] >= t_start) & (df['T_REC'] <= t_end)
         if len(df.loc[mask]) <= 14:
-            # Allow for at most 2 missing frames
+            # Allow for at most 1 missing frames
             # There are 16 frames (1+24*60/96) if no frame is missing
             counter['mis_rec'] += 1
             continue
@@ -167,6 +167,10 @@ def select_per_arp(dataset, arpnum):
         if not label and (len(flares_before) > 0  or len(flares_after) > 0):
             # Only select queit samples for the negative class
             counter['pos'] += 1
+            continue
+
+        if df.loc[mask, 'T_REC'].iloc[-1] != t_end:
+            counter['mis_img'] += 1
             continue
 
         if df.loc[mask, 'image_nan'].sum() >= 1:
