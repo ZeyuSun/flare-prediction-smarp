@@ -40,7 +40,7 @@ def get_output(model, X):
     if hasattr(model, 'decision_function'):
         y_score = model.decision_function(X)
     elif hasattr(model, 'predict_proba'):
-        y_score = model.predict_proba(X).max(axis=1)
+        y_score = model.predict_proba(X)[:,1]
     else:
         raise
     return y_score
