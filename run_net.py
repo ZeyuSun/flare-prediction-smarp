@@ -1,4 +1,5 @@
 import os
+import functools
 from datetime import datetime, timedelta
 import argparse
 import cProfile, pstats
@@ -8,7 +9,7 @@ import drms
 import torch
 from torch.utils.data import Dataset, DataLoader
 from torch.nn import functional as F
-from torchvision import transforms
+from torchvision.transforms import Compose
 import pytorch_lightning as pl
 
 from arnet.data.datamodule import ARVideoDataModule as _ARVideoDataModule
@@ -16,7 +17,8 @@ from arnet.run_net import train, test, visualize
 from arnet import utils
 from arnet import const
 from config import cfg
-from data import query
+from data import query, read_header
+from constants import CONSTANTS
 
 
 SPLIT_DIRS = {
@@ -31,72 +33,135 @@ SERIES = {
     'HARP': 'hmi.sharp_cea_720s',
     'TARP': 'su_mbobra.smarp_cea_96m',
 }
+HEADER_DIRS = {
+    'TARP': '/data2/SMARP/header/',
+    'HARP': '/data2/SHARP/header_los/',
+}
+HEADER_TIME_FMT = '%Y.%m.%d_%H:%M:%S_TAI' # 2006.05.21_14:24:00_TAI
+CADENCE = timedelta(minutes=96)
 
 
-class ARVideoDataset(Dataset):
-    def __init__(self, df_sample, transform=None):
+class ActiveRegionDataset(Dataset):
+    """Active Region dataset.
+
+    Args:
+        df_sample: Sample data frame.
+        features: List of features to use. If None, use magnetogram.
+        num_frames: Number of frames before t_end to use.
+        transforms (callable): Transform to apply to samples.
+    """
+    def __init__(self, df_sample, features=None, num_frames=16, transform=None):
         self.df_sample = df_sample
         self.df_sample['flares'].fillna('', inplace=True)
+
+        features = features or ['MAGNETOGRAM']
+        if 'MAGNETOGRAM' in features and len(features) > 1:
+            raise ValueError('combining image with parameter not allowed')
+        self.features = features
+        assert 1 <= num_frames <= 16, 'num_frames not in [1,16]'
+        self.num_frames = num_frames
         self.transform = transform
 
     def __len__(self):
         return len(self.df_sample)
 
     def __getitem__(self, idx):
-        current_sample = self.df_sample.iloc[idx]
-        t_start = current_sample['t_start']
-        t_end = current_sample['t_end']
-        prefix = current_sample['prefix']
-        arpnum = current_sample['arpnum']
-        flares = current_sample['flares']
+        sample = self.df_sample.iloc[idx]
 
-        # video
-        video = self.load_transform(prefix, arpnum, t_start, t_end)
+        # data
+        if 'MAGNETOGRAM' in self.features: # image
+            data = self.load_video(sample['prefix'], sample['arpnum'], sample['t_end'])
+        else: # parameters
+            header_df = self.load_header(sample['prefix'], sample['arpnum'])
+            data = self.load_parameters(header_df, sample['prefix'], sample['t_end'])
 
         # label
-        label = int(current_sample['label'])
+        label = int(sample['label'])
 
         # meta
-        t_start_str = datetime.strptime(t_start, '%Y-%m-%d %H:%M:%S').strftime('%Y%m%d%H%M%S')
-        largest_flare = max(flares.split('|')) #WARNING: X10+
-        meta = f'{prefix}{arpnum:06d}_{t_start_str}_H0_W0_{largest_flare}.npy'
-        return video, label, meta
+        t_end = datetime.strptime(sample['t_end'], '%Y-%m-%d %H:%M:%S').strftime('%Y%m%d%H%M%S')
+        largest_flare = max(sample['flares'].split('|')) #WARNING: X10+
+        meta = f'{sample["prefix"]}{sample["arpnum"]:06d}_{t_end}_H0_W0_{largest_flare}.npy'
+        return data, label, meta
 
-    def load_transform(self, prefix, arpnum, t_start, t_end):
-        t_steps = pd.date_range(drms.to_datetime(t_start),
-                                drms.to_datetime(t_end),
-                                freq='96min').strftime('%Y%m%d_%H%M%S_TAI')
+    def load_video(self, prefix, arpnum, t_end):
+        t_end = drms.to_datetime(t_end)
+        t_start = t_end - timedelta(minutes=96) * (self.num_frames - 1)
+        t_steps = pd.date_range(t_start, t_end, freq='96min').strftime('%Y%m%d_%H%M%S_TAI')
         filenames = (f"{SERIES[prefix]}.{arpnum}.{t}.magnetogram.fits"
                      for t in t_steps)
-        filepaths = [os.path.join(DATA_DIRS[prefix], f'{arpnum:06d}', filename)
+        _filepaths = [os.path.join(DATA_DIRS[prefix], f'{arpnum:06d}', filename)
                      for filename in filenames]
-        filepaths = [p if os.path.exists(p) else filepaths[i+1]
-                     for i, p in enumerate(filepaths)]
+        # Assumes (1) last frame exists (2) missing at most one filepath
+        filepaths = [p if os.path.isfile(p) else _filepaths[i+1]
+                     for i, p in enumerate(_filepaths)]
         video = query(filepaths)
         video = torch.from_numpy(video)
         video = torch.unsqueeze(video, 0) # C,T,H,W
         if self.transform:
             video = self.transform(video)
-        if prefix == 'HARP':
-            pass # accounted for in fits_open
-            #video = F.interpolate(video, scale_factor=1/4, mode='nearest')
         return video
 
+    @functools.lru_cache(maxsize=8)
+    def load_header(self, prefix, arpnum):
+        if prefix == 'HARP':
+            dataset = 'sharp'
+        elif prefix == 'TARP':
+            dataset = 'smarp'
+        else:
+            raise
+        header_df = read_header(dataset, arpnum)
+        #header_file = os.path.join(HEADER_DIRS[prefix], f'{prefix}{arpnum:06d}_ATTRS.csv')
+        #header_df = pd.read_csv(header_file)
+        # df['T_REC'] = df['T_REC'].apply(drms.to_datetime) # time consuming
+        return header_df
 
-class ARVideoDataModule(pl.LightningDataModule):
+    def load_parameters(self, header_df, prefix, t_end):
+        t_end = drms.to_datetime(t_end)
+        t_start = t_end - timedelta(minutes=96) * (self.num_frames - 1)
+        t_steps = pd.date_range(t_start, t_end, freq='96min').strftime('%Y.%m.%d_%H:%M:%S_TAI')
+        df = header_df[self.features]
+        df = df.reindex(df.index[header_df['T_REC'].isin(t_steps)], method='bfill')
+        if df.isna().any(axis=None):
+            print(df)
+            breakpoint()
+        #if self.transform:
+        #    df = self.transform(df)
+        df = self.standardize(df, prefix)
+        sequence = torch.tensor(df.to_numpy(), dtype=torch.float16)
+        return sequence
+        #sequence = standardize(prefix, sequence).astype(np.float32)
+
+    def standardize(self, df, prefix):
+        if prefix == 'HARP':
+            dataset = 'SHARP'
+        elif prefix == 'TARP':
+            dataset = 'SMARP'
+        else:
+            raise
+        mean = {k: v for k, v in CONSTANTS[dataset + '_MEAN'].items() if k in self.features}
+        std = {k: v for k, v in CONSTANTS[dataset + '_STD'].items() if k in self.features}
+        df = (df - mean) / std
+        return df
+
+
+class ActiveRegionDataModule(pl.LightningDataModule):
+    """Active region DataModule.
+
+    Handles cfg. Load and organize dataframes.
+    """
     def __init__(self, cfg):
         super().__init__()
         self.cfg = cfg
-        T, H, W = cfg.DATA.NUM_FRAMES, cfg.DATA.HEIGHT, cfg.DATA.WIDTH
-        self.transform = transforms.Compose([
-            utils.CenterCropPad3D(target_size=(None, H, W)),
-            #utils.ValueTransform(),
-            transforms.Normalize(mean=0, std=const.STD),
-        ])
-        self.dims = (1, T, H, W)
-        self.num_classes = self.cfg.DATA.NUM_CLASSES
+        self.construct_transforms()
+        self.construct_datasets()
         self.testmode = 'test'
 
+    def construct_transforms(self):
+        transforms = [utils.get_transform(name, cfg) for name in cfg.DATA.TRANSFORMS]
+        self.transform = Compose(transforms)
+
+    def construct_datasets(self):
         smarp_train = pd.read_csv(os.path.join(SPLIT_DIRS['TARP'], 'train.csv'))
         smarp_test  = pd.read_csv(os.path.join(SPLIT_DIRS['TARP'], 'test.csv'))
         sharp_train = pd.read_csv(os.path.join(SPLIT_DIRS['HARP'], 'train.csv'))
@@ -116,11 +181,14 @@ class ARVideoDataModule(pl.LightningDataModule):
         else:
             raise
         self.df_train = self.df_train.sample(frac=1)
-        self.df_vis = sharp_test.iloc[:10]
+        #self.df_vis = sharp_test.iloc[:4]
+        self.df_vis = sharp_train.loc[sharp_train['arpnum'] == 377].iloc[0:8:2]
 
     def train_dataloader(self):
-        dataset = ARVideoDataset(self.df_train,
-                                 transform=self.transform)
+        dataset = ActiveRegionDataset(self.df_train,
+                                      features=cfg.DATA.FEATURES,
+                                      num_frames=cfg.DATA.NUM_FRAMES,
+                                      transform=self.transform)
         #sampler = RandomSampler(dataset, len(dataset) // 2)
         loader = DataLoader(dataset,
                             batch_size=self.cfg.DATA.BATCH_SIZE,
@@ -131,8 +199,10 @@ class ARVideoDataModule(pl.LightningDataModule):
         return loader
 
     def val_dataloader(self):
-        dataset = ARVideoDataset(self.df_val,
-                                 transform=self.transform)
+        dataset = ActiveRegionDataset(self.df_val,
+                                      features=cfg.DATA.FEATURES,
+                                      num_frames=cfg.DATA.NUM_FRAMES,
+                                      transform=self.transform)
         loader = DataLoader(dataset,
                             batch_size=self.cfg.DATA.BATCH_SIZE,
                             num_workers=self.cfg.DATA.NUM_WORKERS,
@@ -141,26 +211,34 @@ class ARVideoDataModule(pl.LightningDataModule):
 
     def test_dataloader(self):
         if self.testmode == 'test':
-            dataset = ARVideoDataset(self.df_test,
-                                     transform=self.transform)
+            dataset = ActiveRegionDataset(self.df_test,
+                                          features=cfg.DATA.FEATURES,
+                                          num_frames=cfg.DATA.NUM_FRAMES,
+                                          transform=self.transform)
             loader = DataLoader(dataset,
                                 batch_size=self.cfg.DATA.BATCH_SIZE,
                                 num_workers=self.cfg.DATA.NUM_WORKERS,
                                 pin_memory=True)
         elif self.testmode == 'visualize_predictions':
-            dataset = ARVideoDataset(self.df_vis,
-                                     transform=self.transform)
+            dataset = ActiveRegionDataset(self.df_vis,
+                                          features=cfg.DATA.FEATURES,
+                                          num_frames=cfg.DATA.NUM_FRAMES,
+                                          transform=self.transform)
             loader = DataLoader(dataset,
                                 batch_size=self.cfg.DATA.BATCH_SIZE,
                                 num_workers=0,
                                 pin_memory=False)
         elif self.testmode == 'visualize_features':
-            dataset = ARVideoDataset(self.df_vis,
-                                     transform=self.transform)
+            dataset = ActiveRegionDataset(self.df_vis,
+                                          features=cfg.DATA.FEATURES,
+                                          num_frames=cfg.DATA.NUM_FRAMES,
+                                          transform=self.transform)
             loader = DataLoader(dataset,
                                 batch_size=1,
                                 num_workers=0,
                                 pin_memory=False)
+        else:
+            raise
         return loader
 
 
@@ -179,30 +257,32 @@ def main(args):
         experiment_name = 'c3d'
     mlflow.set_experiment(experiment_name)
 
-    if args.config is not None:
-        cfg.merge_from_file(args.config)
-    cfg.merge_from_list(args.opts)
-    #cfg.freeze()
+    with mlflow.start_run(run_name=args.run_name) as run:
+        if args.config is not None:
+            cfg.merge_from_file(args.config)
+        cfg.merge_from_list(args.opts)
+        # cfg.freeze()
+        mlflow.log_params(cfg.flatten())
 
-    logger = utils.setup_logger(cfg.MISC.OUTPUT_DIR)
-    logger.info(cfg)
+        logger = utils.setup_logger(cfg.MISC.OUTPUT_DIR)
+        logger.info(cfg)
 
-    dm = ARVideoDataModule(cfg)
+        dm = ActiveRegionDataModule(cfg)
 
-    if 'train' in args.modes:
-        logger.info("======== TRAIN ========")
-        if args.resume:
-            cfg.LEARNER.MODEL.WEIGHTS
-        best_model_path = train(cfg, dm)
-        cfg.LEARNER.MODEL.WEIGHTS = best_model_path
+        if 'train' in args.modes:
+            logger.info("======== TRAIN ========")
+            if args.resume:
+                cfg.LEARNER.MODEL.WEIGHTS
+            best_model_path = train(cfg, dm)
+            cfg.LEARNER.MODEL.WEIGHTS = best_model_path
 
-    if 'test' in args.modes:
-        logger.info("======== TEST ========")
-        test(cfg, dm)
+        if 'test' in args.modes:
+            logger.info("======== TEST ========")
+            test(cfg, dm)
 
-    if 'visualize' in args.modes:
-        logger.info("======== VISUALIZE ========")
-        visualize(cfg, dm)
+        if 'visualize' in args.modes:
+            logger.info("======== VISUALIZE ========")
+            visualize(cfg, dm)
 
 
 if __name__ == '__main__':
