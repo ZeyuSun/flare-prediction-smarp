@@ -321,7 +321,7 @@ def sklearn_main(output_dir='outputs'):
             'class_weight': ['balanced'], # default to None (all classes are assumed to have weight one)
         },
         'RandomForestClassifier': {
-            'n_estimators': [50, 100, 300],
+            'n_estimators': [300], #[50, 100, 300], 300 better than 50 and 100
             #'max_depth': [None, 1, 2, 4, 8], # RF doesn't use weak learner
             'class_weight': ['balanced', 'balanced_subsample'], # default to None (all classes are assumed to have weight one)
             'oob_score': [True],
@@ -417,7 +417,7 @@ if __name__ == '__main__':
                 'n_iter': 50,
                 'n_jobs': 20,
                 'n_points': 4,
-                'cv': 10,
+                'cv': 5,
             },
         })
 
