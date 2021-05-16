@@ -27,7 +27,8 @@ from sklearn.experimental import enable_hist_gradient_boosting
 from sklearn.ensemble import RandomForestClassifier, ExtraTreesClassifier, AdaBoostClassifier, GradientBoostingClassifier, HistGradientBoostingClassifier
 from xgboost import XGBClassifier
 
-from metrics import tss, hss2, roc_auc_score, get_scores_from_cm
+from metrics import tss, hss2, roc_auc_score, get_scores_from_cm, optimal_tss, draw_ssp
+from utils import get_output
 
 
 def get_data(filepath):
@@ -84,52 +85,6 @@ def load_dataset(dataset):
     return Z_train, Z_test, y_train, y_test
 
 
-def fit_threshold(model, X, y):
-    """Fit the decision threshold for the model
-
-    Set a `thresh` attribute for the model. Threshold moving is particularly
-    useful for imbalanced classification. To use the adjusted threshold, use
-    `decision_function` or `predict_proba` and `thresh` for prediction.
-    Do not use `predict` or `score` method.
-    """
-
-    if hasattr(model, 'decision_function'):
-        y_score = model.decision_function(X)
-    elif hasattr(model, 'predict_proba'):
-        y_score = model.predict_proba(X).max(axis=1)
-    else:
-        raise
-    fpr, tpr, thresh = roc_curve(y, y_score)
-    i = np.argmax(tpr - fpr)  # tss = tpr - fpr
-    #WARNING: thresh can be a coarse grid, e.g., when y_score taking 0 and 1
-    model.thresh = thresh[i]
-    mlflow.log_metric('thresh', model.thresh)
-
-    # closure can't be pickled
-    # self is seen as a positional arg
-    # model is local. (LEGB rule)
-    #def predict(X):
-    #    if hasattr(model, 'decision_function'):
-    #        y_pred = (model.decision_function(X) > model.thresh).astype(int)
-    #    elif hasattr(model, 'predict_proba'):
-    #        y_pred = (model.predict_proba(X) > model.thresh).astype(int)
-    #    else:
-    #        raise
-    #    return y_pred
-
-    #model.predict = predict
-
-
-def predict_thresholded(model, X):
-    if hasattr(model, 'decision_function'):
-        y_pred = (model.decision_function(X) > model.thresh)
-    elif hasattr(model, 'predict_proba'):
-        y_pred = (model.predict_proba(X).max(axis=1) > model.thresh)
-    else:
-        raise
-    return y_pred
-
-
 def evaluate(dataset, model, save_dir='outputs'):
     if isinstance(model, str):
         import pickle
@@ -137,7 +92,6 @@ def evaluate(dataset, model, save_dir='outputs'):
 
     X_train, X_test, y_train, y_test = load_dataset(dataset)
     y_pred = model.predict(X_test)
-    y_pred_th = predict_thresholded(model, X_test)
     cm = confusion_matrix(y_test, y_pred)
 
     plot_confusion_matrix(model, X_test, y_test)
@@ -151,14 +105,18 @@ def evaluate(dataset, model, save_dir='outputs'):
     auc = scorer(model, X_test, y_test)
     plot_roc_curve(model, X_test, y_test) #TODO: mark decision threshold
     plt.savefig(os.path.join(save_dir, 'roc.png'))
-    mlflow.log_artifact(os.path.join(save_dir, 'roc.png'))
-    mlflow.log_figure(plt.gcf(), 'roc_figure.png')
+    mlflow.log_figure(plt.gcf(), 'roc.png')
+    y_score = get_output(model, X_test)
+    tss_opt = optimal_tss(y_test, y_score)
+    plt.savefig(os.path.join(save_dir, 'ssp.png'))
+    mlflow.log_figure(draw_ssp(y_test, y_score), 'ssp.png')
     #plt.show()
 
     scores = get_scores_from_cm(cm)
-    scores.update({'auc': auc})
-    scores_th = get_scores_from_cm(confusion_matrix(y_test, y_pred_th))
-    scores.update({k+'_th': v for k, v in scores_th.items()})
+    scores.update({
+        'auc': auc,
+        'tss_opt': tss_opt,
+    })
     save_path = os.path.join(save_dir, 'best_model_test_scores.md')
     pd.DataFrame(scores, index=[0,]).to_markdown(save_path, tablefmt='grid')
 
@@ -225,7 +183,6 @@ def tune(dataset, Model, param_space, method='grid', save_dir='outputs'):
                               refit=True, # default True
                               verbose=1)
         search.fit(X_train, y_train)
-        fit_threshold(search, X_train, y_train)
     elif method == 'bayes':
         search = BayesSearchCV(pipe,
                                pipe_space,
@@ -238,7 +195,6 @@ def tune(dataset, Model, param_space, method='grid', save_dir='outputs'):
                                refit=True, # default True
                                verbose=1)
         search.fit(X_train, y_train)
-        fit_threshold(search, X_train, y_train)
         # Partial Dependence plots of the (surrogate) objective function
         # Not working for smoke test
         #_ = plot_objective(search.optimizer_results_[0],  # index out of range for QDA? If search space is empty, then the optimizer_results_ has length 1, but in plot_objective, optimizer_results_.models[-1] is called but models is an empty list. This should happen for all n_jobs though. Why didn't I come across it?
@@ -292,7 +248,7 @@ def sklearn_main(output_dir='outputs'):
 
     Models = [
         #KNeighborsClassifier,
-        QuadraticDiscriminantAnalysis,
+        #QuadraticDiscriminantAnalysis,
         SGDClassifier,
         #SVC,
         #DecisionTreeClassifier,

@@ -36,6 +36,16 @@ def get_log_intensity(class_str):
     return a + b
 
 
+def get_output(model, X):
+    if hasattr(model, 'decision_function'):
+        y_score = model.decision_function(X)
+    elif hasattr(model, 'predict_proba'):
+        y_score = model.predict_proba(X).max(axis=1)
+    else:
+        raise
+    return y_score
+
+
 def draw_pairplot(Xs, labels, keys):
     import numpy as np
     import pandas as pd
