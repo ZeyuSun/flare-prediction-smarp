@@ -29,9 +29,6 @@ for folder in [SHARP_LOS_HEADER_DIR, SHARP_VEC_HEADER_DIR, SHARP_IMAGE_DIR,
                GOES_DIR]:
     if not os.path.exists(folder):
         os.makedirs(folder)
-_re_export_recset = re.compile(r'^\s*([\w\.]+)\s*(\[.*\])?\s*(?:\{([\w\s\.,]*)\})?\s*$')
-_re_export_recset_pkeys = re.compile(r'\[([^\[^\]]*)\]')
-_re_export_recset_slist = re.compile(r'[\s,]+')
 
 
 def download_sharp_headers(harpnum):
@@ -105,6 +102,11 @@ def download_smarp_headers(tarpnum):
 
 
 def _filename_from_export_record(rs):
+    """Adapted from drms"""
+    _re_export_recset = re.compile(r'^\s*([\w\.]+)\s*(\[.*\])?\s*(?:\{([\w\s\.,]*)\})?\s*$')
+    _re_export_recset_pkeys = re.compile(r'\[([^\[^\]]*)\]')
+    _re_export_recset_slist = re.compile(r'[\s,]+')
+
     m = _re_export_recset.match(rs)
     sname, pkeys, segs = m.groups()
     pkeys = _re_export_recset_pkeys.findall(pkeys)

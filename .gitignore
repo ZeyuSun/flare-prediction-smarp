@@ -1,7 +1,7 @@
 .*.swp
 .idea/
 mlruns/
-archive/
+_archive/
 download/
 datasets/
 outputs/

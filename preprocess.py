@@ -9,7 +9,7 @@ import pandas as pd
 import drms
 from tqdm import tqdm, trange
 
-from data_utils import read_header, query
+from arnet.utils import read_header, query
 from utils import get_flare_index
 
 
@@ -23,6 +23,8 @@ GOES_TIME_FORMAT = '%Y-%m-%dT%H:%M:%S.000'
 KEYWORDS = ['AREA', 'USFLUX', 'MEANGBZ', 'R_VALUE']
 goes = pd.read_csv(os.path.join(RAW_DATA_DIR, 'GOES/goes.csv'))
 goes['goes_class'] = goes['goes_class'].fillna('')
+if not os.path.exists(PROCESSED_DATA_DIR):
+    os.makedirs(PROCESSED_DATA_DIR)
 logging.basicConfig(filename=os.path.join(PROCESSED_DATA_DIR, 'log_preprocess.txt'),
                     filemode='a',
                     format='[%(asctime)s] %(name)s %(levelname)s: %(message)s',
@@ -193,7 +195,7 @@ def select_per_arp(dataset, arpnum):
         }
         sample.update({k: df.loc[mask, k].iloc[-1] for k in KEYWORDS})
         samples.append(sample)
-    logging.info('{} {}: {}/{} sequences extracted. {}'.format(get_prefix(dataset), arpnum, len(samples), len(df), dict(counter)))
+    logger.info('{} {}: {}/{} sequences extracted. {}'.format(get_prefix(dataset), arpnum, len(samples), len(df), dict(counter)))
     return samples
 
 
@@ -202,21 +204,23 @@ def main(dataset, split_num, output_dir):
         os.makedirs(output_dir)
 
     splits = split(dataset, split_num, seed=0)
+    df_list = []
     for key, arpnums in tqdm(enumerate(splits)):
-        logger.info(f'Split {key} / {len(splits)-1}')
+        logger.info(f'{dataset} split {key} / {len(splits)-1}: {arpnums}')
         df = select(dataset, arpnums)
-        filepath = os.path.join(output_dir, f'{dataset}_{key}.csv')
-        df.to_csv(filepath, index=False)
+        df_list.append(df)
 
-    dfs = [pd.read_csv(os.path.join(output_dir, f'{dataset}_{key}.csv'))
-           for key in range(split_num)]
-    train_df = pd.concat(dfs[:split_num-1]).reset_index(drop=True) #TODO: sort by dataset/arpnum
-    train_df = rus(train_df, seed=0)
-    test_df = dfs[-1]
-    test_df = rus(test_df, seed=1)
-
+    train_df = pd.concat(df_list[:split_num-1]).reset_index(drop=True) #TODO: sort by dataset/arpnum
     train_df.to_csv(os.path.join(output_dir, 'train.csv'), index=False)
+
+    train_df = rus(train_df, seed=0)
+    train_df.to_csv(os.path.join(output_dir, 'train_balanced.csv'), index=False)
+
+    test_df = df_list[-1]
     test_df.to_csv(os.path.join(output_dir, 'test.csv'), index=False)
+
+    test_df = rus(test_df, seed=1)
+    test_df.to_csv(os.path.join(output_dir, 'test_balanced.csv'), index=False)
 
 
 def rus(df, seed=None):
@@ -241,4 +245,5 @@ def test_seed():
 if __name__ == '__main__':
     test_seed()
     for dataset in ['smarp', 'sharp']:
-        main(dataset, split_num=5, output_dir=PROCESSED_DATA_DIR)
+        output_dir = os.path.join(PROCESSED_DATA_DIR, dataset)
+        main(dataset, split_num=5, output_dir=output_dir)
