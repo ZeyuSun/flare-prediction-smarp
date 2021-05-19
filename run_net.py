@@ -17,7 +17,7 @@ from arnet.run_net import train, test, visualize
 from arnet import utils
 from arnet import const
 from config import cfg
-from data import query, read_header
+from data import query, query_parameters, read_header
 from constants import CONSTANTS
 
 
@@ -72,8 +72,7 @@ class ActiveRegionDataset(Dataset):
         if 'MAGNETOGRAM' in self.features: # image
             data = self.load_video(sample['prefix'], sample['arpnum'], sample['t_end'])
         else: # parameters
-            header_df = self.load_header(sample['prefix'], sample['arpnum'])
-            data = self.load_parameters(header_df, sample['prefix'], sample['t_end'])
+            data = self.load_parameters(sample['prefix'], sample['arpnum'], sample['t_end'])
 
         # label
         label = int(sample['label'])
@@ -116,19 +115,19 @@ class ActiveRegionDataset(Dataset):
         # df['T_REC'] = df['T_REC'].apply(drms.to_datetime) # time consuming
         return header_df
 
-    def load_parameters(self, header_df, prefix, t_end):
+    def load_parameters(self, prefix, arpnum, t_end):
         t_end = drms.to_datetime(t_end)
         t_start = t_end - timedelta(minutes=96) * (self.num_frames - 1)
-        t_steps = pd.date_range(t_start, t_end, freq='96min').strftime('%Y.%m.%d_%H:%M:%S_TAI')
-        df = header_df[self.features]
-        df = df.reindex(df.index[header_df['T_REC'].isin(t_steps)], method='bfill')
+        t_recs = pd.date_range(t_start, t_end, freq='96min').strftime('%Y.%m.%d_%H:%M:%S_TAI')
+        df = query_parameters(prefix, arpnum, t_recs, self.features)
+        df = df.fillna(method='bfill')
         if df.isna().any(axis=None):
             print(df)
             breakpoint()
         #if self.transform:
         #    df = self.transform(df)
         df = self.standardize(df, prefix)
-        sequence = torch.tensor(df.to_numpy(), dtype=torch.float16)
+        sequence = torch.tensor(df.to_numpy(), dtype=torch.float32) # float16 causes error, lstm is 32bit
         return sequence
         #sequence = standardize(prefix, sequence).astype(np.float32)
 
@@ -280,9 +279,9 @@ def main(args):
             logger.info("======== TEST ========")
             test(cfg, dm)
 
-        if 'visualize' in args.modes:
-            logger.info("======== VISUALIZE ========")
-            visualize(cfg, dm)
+        #if 'visualize' in args.modes:
+        #    logger.info("======== VISUALIZE ========")
+        #    visualize(cfg, dm)
 
 
 if __name__ == '__main__':
@@ -291,7 +290,7 @@ if __name__ == '__main__':
                         help='Smoke test')
     parser.add_argument('-e', '--experiment_name', default='experiment',
                         help='MLflow experiment name')
-    parser.add_argument('-r', '--run_name', default='c3d',
+    parser.add_argument('-r', '--run_name', default='CNN',
                         help='MLflow run name')
     parser.add_argument('--config', metavar='FILE',
                         help="Path to a yaml formatted config file")

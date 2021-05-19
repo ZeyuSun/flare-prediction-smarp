@@ -1,4 +1,5 @@
 import os
+import json
 import logging
 import numpy as np
 import pandas as pd
@@ -7,7 +8,8 @@ from astropy.io import fits
 
 
 DATA_DIR = '/data2'
-r = redis.Redis(db=13)
+r_header = redis.Redis(db=3)
+r_image = redis.Redis(db=13)
 
 
 def read_header(dataset, arpnum):
@@ -83,12 +85,12 @@ def query(filepaths, redis=True):
         filepaths = [filepaths]
 
     if redis:
-        buff = r.mget(filepaths)
+        buff = r_image.mget(filepaths)
         indices = [i for i, b in enumerate(buff) if b is None]
         if len(indices) > 0:
             keys = [filepaths[i] for i in indices]
             values = [toRedis(fits_open(k).astype(np.float16)) for k in keys]
-            r.mset(dict(zip(keys, values)))
+            r_image.mset(dict(zip(keys, values)))
             for j, i in enumerate(indices):
                 buff[i] = values[j]
         data_arrays = [fromRedis(b).astype(np.float32) for b in buff]
@@ -99,6 +101,33 @@ def query(filepaths, redis=True):
     if single_file:
         data = data[0]
     return data
+
+
+def query_parameters(prefix, arpnum, t_recs, keywords, redis=True):
+    """Query keyword sequence from a header file.
+
+    Alternative design: replace prefix and arpnum with filepath.
+    """
+    KEYWORDS = ['T_REC', 'AREA', 'USFLUX', 'MEANGBZ', 'R_VALUE']
+
+    if redis:
+        id = f'{prefix}{arpnum:06d}' # header file identifier
+        if r_header.exists(id) == 0:
+            dataset = 'sharp' if prefix == 'HARP' else 'smarp'
+            header = read_header(dataset, arpnum)
+            header = header[KEYWORDS]
+            header = header.set_index('T_REC')
+            mapping = {t_rec: header.loc[t_rec].to_json() for t_rec in header.index}
+            r_header.hmset(id, mapping)
+        buff = r_header.hmget(id, t_recs)
+        # series = [pd.read_json(b, typ='series') if b else None for b in buff]
+        # if any([s is None for s in series]):
+        #     print(series)
+        records = [json.loads(b) if b else {} for b in buff]
+        df = pd.DataFrame(records, index=t_recs)
+    else:
+        raise
+    return df
 
 
 if __name__ == '__main__':
