@@ -13,17 +13,17 @@ from sunpy.instr.goes import get_goes_event_list
 
 ######### Change these ##########
 EMAIL = 'szymails@gmail.com'
-DATA_DIR = '/data2'
+RAW_DATA_DIR = '/data2'
 #################################
 
 
 c = drms.Client(debug=False, verbose=False, email=EMAIL)
-SHARP_LOS_HEADER_DIR = os.path.join(DATA_DIR, 'SHARP/header_los')
-SHARP_VEC_HEADER_DIR = os.path.join(DATA_DIR, 'SHARP/header_vec')
-SHARP_IMAGE_DIR = os.path.join(DATA_DIR, 'SHARP/image')
-SMARP_HEADER_DIR = os.path.join(DATA_DIR, 'SMARP/header')
-SMARP_IMAGE_DIR = os.path.join(DATA_DIR, 'SMARP/image')
-GOES_DIR = os.path.join(DATA_DIR, 'GOES')
+SHARP_LOS_HEADER_DIR = os.path.join(RAW_DATA_DIR, 'SHARP/header_los')
+SHARP_VEC_HEADER_DIR = os.path.join(RAW_DATA_DIR, 'SHARP/header_vec')
+SHARP_IMAGE_DIR = os.path.join(RAW_DATA_DIR, 'SHARP/image')
+SMARP_HEADER_DIR = os.path.join(RAW_DATA_DIR, 'SMARP/header')
+SMARP_IMAGE_DIR = os.path.join(RAW_DATA_DIR, 'SMARP/image')
+GOES_DIR = os.path.join(RAW_DATA_DIR, 'GOES')
 for folder in [SHARP_LOS_HEADER_DIR, SHARP_VEC_HEADER_DIR, SHARP_IMAGE_DIR,
                SMARP_HEADER_DIR, SMARP_IMAGE_DIR,
                GOES_DIR]:

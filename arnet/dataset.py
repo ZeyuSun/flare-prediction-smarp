@@ -1,29 +1,22 @@
 import os
 import functools
 from datetime import datetime, timedelta
-import argparse
-import cProfile, pstats
 import pandas as pd
-import mlflow
 import drms
 import torch
 from torch.utils.data import Dataset, DataLoader
-from torch.nn import functional as F
 from torchvision.transforms import Compose
 import pytorch_lightning as pl
 
-from arnet.data.datamodule import ARVideoDataModule as _ARVideoDataModule
-from arnet.run_net import train, test, visualize
-from arnet import utils
-from arnet import const
-from config import cfg
-from data import query, query_parameters, read_header
-from constants import CONSTANTS
+from arnet.utils import query, query_parameters, read_header
+from arnet.transforms import get_transform
+from arnet.constants import CONSTANTS
 
 
+PROCESSED_DATA_DIR = '/home/zeyusun/work/flare-prediction-smarp/datasets/M1.0_24hr_balanced'
 SPLIT_DIRS = {
-    'HARP': '/home/zeyusun/work/flare-prediction-smarp/datasets/sharp/',
-    'TARP': '/home/zeyusun/work/flare-prediction-smarp/datasets/smarp/',
+    'HARP': os.path.join(PROCESSED_DATA_DIR, 'sharp'),
+    'TARP': os.path.join(PROCESSED_DATA_DIR, 'smarp'),
 }
 DATA_DIRS = {
     'HARP': '/data2/SHARP/image/',
@@ -157,7 +150,8 @@ class ActiveRegionDataModule(pl.LightningDataModule):
         self.testmode = 'test'
 
     def construct_transforms(self):
-        transforms = [utils.get_transform(name, cfg) for name in cfg.DATA.TRANSFORMS]
+        transforms = [get_transform(name, self.cfg)
+                      for name in self.cfg.DATA.TRANSFORMS]
         self.transform = Compose(transforms)
 
     def construct_datasets(self):
@@ -185,8 +179,8 @@ class ActiveRegionDataModule(pl.LightningDataModule):
 
     def train_dataloader(self):
         dataset = ActiveRegionDataset(self.df_train,
-                                      features=cfg.DATA.FEATURES,
-                                      num_frames=cfg.DATA.NUM_FRAMES,
+                                      features=self.cfg.DATA.FEATURES,
+                                      num_frames=self.cfg.DATA.NUM_FRAMES,
                                       transform=self.transform)
         #sampler = RandomSampler(dataset, len(dataset) // 2)
         loader = DataLoader(dataset,
@@ -199,8 +193,8 @@ class ActiveRegionDataModule(pl.LightningDataModule):
 
     def val_dataloader(self):
         dataset = ActiveRegionDataset(self.df_val,
-                                      features=cfg.DATA.FEATURES,
-                                      num_frames=cfg.DATA.NUM_FRAMES,
+                                      features=self.cfg.DATA.FEATURES,
+                                      num_frames=self.cfg.DATA.NUM_FRAMES,
                                       transform=self.transform)
         loader = DataLoader(dataset,
                             batch_size=self.cfg.DATA.BATCH_SIZE,
@@ -211,8 +205,8 @@ class ActiveRegionDataModule(pl.LightningDataModule):
     def test_dataloader(self):
         if self.testmode == 'test':
             dataset = ActiveRegionDataset(self.df_test,
-                                          features=cfg.DATA.FEATURES,
-                                          num_frames=cfg.DATA.NUM_FRAMES,
+                                          features=self.cfg.DATA.FEATURES,
+                                          num_frames=self.cfg.DATA.NUM_FRAMES,
                                           transform=self.transform)
             loader = DataLoader(dataset,
                                 batch_size=self.cfg.DATA.BATCH_SIZE,
@@ -220,8 +214,8 @@ class ActiveRegionDataModule(pl.LightningDataModule):
                                 pin_memory=True)
         elif self.testmode == 'visualize_predictions':
             dataset = ActiveRegionDataset(self.df_vis,
-                                          features=cfg.DATA.FEATURES,
-                                          num_frames=cfg.DATA.NUM_FRAMES,
+                                          features=self.cfg.DATA.FEATURES,
+                                          num_frames=self.cfg.DATA.NUM_FRAMES,
                                           transform=self.transform)
             loader = DataLoader(dataset,
                                 batch_size=self.cfg.DATA.BATCH_SIZE,
@@ -229,8 +223,8 @@ class ActiveRegionDataModule(pl.LightningDataModule):
                                 pin_memory=False)
         elif self.testmode == 'visualize_features':
             dataset = ActiveRegionDataset(self.df_vis,
-                                          features=cfg.DATA.FEATURES,
-                                          num_frames=cfg.DATA.NUM_FRAMES,
+                                          features=self.cfg.DATA.FEATURES,
+                                          num_frames=self.cfg.DATA.NUM_FRAMES,
                                           transform=self.transform)
             loader = DataLoader(dataset,
                                 batch_size=1,
@@ -241,74 +235,3 @@ class ActiveRegionDataModule(pl.LightningDataModule):
         return loader
 
 
-def main(args):
-    """Perform training, testing, and/or visualization"""
-    if args.smoke:
-        args.opts.extend([
-            'TRAINER.limit_train_batches', '10',
-            'TRAINER.limit_val_batches', '2',
-            'TRAINER.limit_test_batches', '2',
-            'TRAINER.max_epochs', '1',
-            'TRAINER.default_root_dir', 'lightning_logs_c3d_dev'
-        ])
-        experiment_name = 'c3d_smoke'
-    else:
-        experiment_name = 'c3d'
-    mlflow.set_experiment(experiment_name)
-
-    with mlflow.start_run(run_name=args.run_name) as run:
-        if args.config is not None:
-            cfg.merge_from_file(args.config)
-        cfg.merge_from_list(args.opts)
-        # cfg.freeze()
-        mlflow.log_params(cfg.flatten())
-
-        logger = utils.setup_logger(cfg.MISC.OUTPUT_DIR)
-        logger.info(cfg)
-
-        dm = ActiveRegionDataModule(cfg)
-
-        if 'train' in args.modes:
-            logger.info("======== TRAIN ========")
-            if args.resume:
-                cfg.LEARNER.MODEL.WEIGHTS
-            best_model_path = train(cfg, dm)
-            cfg.LEARNER.MODEL.WEIGHTS = best_model_path
-
-        if 'test' in args.modes:
-            logger.info("======== TEST ========")
-            test(cfg, dm)
-
-        #if 'visualize' in args.modes:
-        #    logger.info("======== VISUALIZE ========")
-        #    visualize(cfg, dm)
-
-
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-    parser.add_argument('-s', '--smoke', action='store_true',
-                        help='Smoke test')
-    parser.add_argument('-e', '--experiment_name', default='experiment',
-                        help='MLflow experiment name')
-    parser.add_argument('-r', '--run_name', default='CNN',
-                        help='MLflow run name')
-    parser.add_argument('--config', metavar='FILE',
-                        help="Path to a yaml formatted config file")
-    parser.add_argument('--modes', default='train|test|visualize',
-                        help="Perform training, testing, and/or visualization")
-    parser.add_argument('--resume', default=False,
-                        help="Resume training. Valid only in training mode.") #TODO
-    parser.add_argument('opts', default=None, nargs=argparse.REMAINDER,
-                        help="Modify config options. Use dot(.) to indicate hierarchy.")
-    args = parser.parse_args()
-    args.modes = args.modes.split('|')
-    accepted_modes = ['train', 'test', 'visualize']
-    if any([m not in accepted_modes for m in args.modes]):
-        raise AssertionError('Mode {} is not accepted'.format(args.modes))
-    if 'train' not in args.modes and 'LEARNER.MODEL.WEIGHTS' not in args.opts:
-        raise ValueError('LEARNER.MODEL.WEIGHTS must be specified in the absence of training mode.')
-
-    with cProfile.Profile() as p:
-        main(args)
-
-    pstats.Stats(p).sort_stats('cumtime').print_stats(50)

@@ -35,6 +35,7 @@ cfg.LEARNER = CN()
 #cfg.LEARNER.CLASS_WEIGHT = 1 # Positive/Negative weight ratio
 cfg.LEARNER.LOSS_PN_RATIO = 1
 cfg.LEARNER.LEARNING_RATE = 1e-4 # Don't change it here!
+cfg.LEARNER.CHECKPOINT = "" # path to checkpoint file to read from
 ### For visualization
 cfg.LEARNER.VIS = CN()
 cfg.LEARNER.VIS.GRADCAM_LAYERS = []#['convs.conv3']
@@ -43,7 +44,6 @@ cfg.LEARNER.VIS.HISTOGRAM = []#['convs.conv3', 'linear1']
 
 cfg.LEARNER.MODEL = CN()
 cfg.LEARNER.MODEL.NAME = 'SimpleLSTM'
-cfg.LEARNER.MODEL.WEIGHTS = "" # path to checkpoint file to read from
 cfg.LEARNER.MODEL.SETTINGS = 'cnn'
 
 cfg.TRAINER = CN()

@@ -9,20 +9,21 @@ import pandas as pd
 import drms
 from tqdm import tqdm, trange
 
-from data import read_header, query
+from data_utils import read_header, query
 from utils import get_flare_index
 
 
 ######### Change these ##########
-DATA_DIR = '/data2'
+RAW_DATA_DIR = '/data2'
+PROCESSED_DATA_DIR = 'datasets/M1.0_24hr_balanced'
 #################################
 
 
 GOES_TIME_FORMAT = '%Y-%m-%dT%H:%M:%S.000'
 KEYWORDS = ['AREA', 'USFLUX', 'MEANGBZ', 'R_VALUE']
-goes = pd.read_csv(os.path.join(DATA_DIR, 'GOES/goes.csv'))
+goes = pd.read_csv(os.path.join(RAW_DATA_DIR, 'GOES/goes.csv'))
 goes['goes_class'] = goes['goes_class'].fillna('')
-logging.basicConfig(filename='log_preprocess.txt',
+logging.basicConfig(filename=os.path.join(PROCESSED_DATA_DIR, 'log_preprocess.txt'),
                     filemode='a',
                     format='[%(asctime)s] %(name)s %(levelname)s: %(message)s',
                     datefmt='%Y-%m-%d %H:%M:%S',
@@ -43,18 +44,18 @@ def get_prefix(dataset):
 def get_image_filepath(dataset, arpnum, t_rec):
     t_rec = t_rec.strftime('%Y%m%d_%H%M%S_TAI')
     if dataset == 'sharp':
-        return os.path.join(DATA_DIR, f'SHARP/image/{arpnum:06d}/hmi.sharp_cea_720s.{arpnum}.{t_rec}.magnetogram.fits')
+        return os.path.join(RAW_DATA_DIR, f'SHARP/image/{arpnum:06d}/hmi.sharp_cea_720s.{arpnum}.{t_rec}.magnetogram.fits')
     elif dataset == 'smarp':
-        return os.path.join(DATA_DIR, f'SMARP/image/{arpnum:06d}/su_mbobra.smarp_cea_96m.{arpnum}.{t_rec}.magnetogram.fits')
+        return os.path.join(RAW_DATA_DIR, f'SMARP/image/{arpnum:06d}/su_mbobra.smarp_cea_96m.{arpnum}.{t_rec}.magnetogram.fits')
     else:
         raise
 
 
 def split(dataset, split_num, seed=None):
     if dataset == 'sharp':
-        header_dir = os.path.join(DATA_DIR, 'SHARP/header_vec')
+        header_dir = os.path.join(RAW_DATA_DIR, 'SHARP/header_vec')
     elif dataset == 'smarp':
-        header_dir = os.path.join(DATA_DIR, 'SMARP/header')
+        header_dir = os.path.join(RAW_DATA_DIR, 'SMARP/header')
     else:
         raise
     header_files = sorted(os.listdir(header_dir))
@@ -196,8 +197,7 @@ def select_per_arp(dataset, arpnum):
     return samples
 
 
-def main(dataset, split_num=5, output_dir=None):
-    output_dir = output_dir or f'datasets/{dataset}'
+def main(dataset, split_num, output_dir):
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
 
@@ -220,6 +220,7 @@ def main(dataset, split_num=5, output_dir=None):
 
 
 def rus(df, seed=None):
+    """Random Undersampling"""
     np.random.seed(seed)
     pos_mask = df['label'].to_numpy()
     neg_mask = (~df['label']).to_numpy()
@@ -240,4 +241,4 @@ def test_seed():
 if __name__ == '__main__':
     test_seed()
     for dataset in ['smarp', 'sharp']:
-        main(dataset, split_num=5, output_dir=None)
+        main(dataset, split_num=5, output_dir=PROCESSED_DATA_DIR)

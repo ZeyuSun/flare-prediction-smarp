@@ -3,8 +3,10 @@
 mlruns/
 archive/
 download/
+datasets/
 outputs/
 outputs_smoke/
+lightning_logs*
 logs/
 # output_* will mess up the working directory
 
