@@ -34,7 +34,7 @@ def get_image_filepath(dataset, arpnum, t_rec):
         raise
 
 
-def split(dataset, split_num, seed=None):
+def split(dataset, split_num):
     if dataset == 'sharp':
         header_dir = os.path.join(args.raw_data_dir, 'SHARP/header_vec')
     elif dataset == 'smarp':
@@ -42,7 +42,6 @@ def split(dataset, split_num, seed=None):
     else:
         raise
     header_files = sorted(os.listdir(header_dir))
-    np.random.seed(seed)
     numbers = np.random.permutation([int(f[4:10]) for f in header_files])
 
     train_size = (len(numbers) // split_num) * (split_num - 1)
@@ -178,28 +177,33 @@ def select_per_arp(dataset, arpnum,
     return samples
 
 
-def main(dataset, split_num, output_dir, val_time, criterion):
+def main(split_num, output_dir, val_time, criterion):
+    output_dir = os.path.join(args.processed_data_dir, output_dir)
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
+    balanced_dir = output_dir + '_balanced'
+    if not os.path.exists(balanced_dir):
+        os.makedirs(balanced_dir)
 
-    splits = split(dataset, split_num, seed=args.seed)
-    df_list = []
-    for key, arpnums in tqdm(enumerate(splits)):
-        logger.info(f'{dataset} split {key} / {len(splits)-1}: {arpnums}')
-        df = select(dataset, arpnums, val_time, criterion)
-        df_list.append(df)
+    for dataset in ['smarp', 'sharp']:
+        splits = split(dataset, split_num)
+        df_list = []
+        for key, arpnums in tqdm(enumerate(splits)):
+            logger.info(f'{dataset} split {key} / {len(splits)-1}: {arpnums}')
+            df = select(dataset, arpnums, val_time, criterion)
+            df_list.append(df)
 
-    train_df = pd.concat(df_list[:split_num-1]).reset_index(drop=True) #TODO: sort by dataset/arpnum
-    train_df.to_csv(os.path.join(output_dir, 'train.csv'), index=False)
+        train_df = pd.concat(df_list[:split_num-1]).reset_index(drop=True) #TODO: sort by dataset/arpnum
+        train_df.to_csv(os.path.join(output_dir, f'{dataset}_train.csv'), index=False)
 
-    train_df = rus(train_df)
-    train_df.to_csv(os.path.join(output_dir, 'train_balanced.csv'), index=False)
+        train_df = rus(train_df)
+        train_df.to_csv(os.path.join(balanced_dir, f'{dataset}_train.csv'), index=False)
 
-    test_df = df_list[-1]
-    test_df.to_csv(os.path.join(output_dir, 'test.csv'), index=False)
+        test_df = df_list[-1]
+        test_df.to_csv(os.path.join(output_dir, f'{dataset}_test.csv'), index=False)
 
-    test_df = rus(test_df)
-    test_df.to_csv(os.path.join(output_dir, 'test_balanced.csv'), index=False)
+        test_df = rus(test_df)
+        test_df.to_csv(os.path.join(balanced_dir, f'{dataset}_test.csv'), index=False)
 
 
 def rus(df, seed=False):
@@ -234,6 +238,10 @@ def get_label(flares_before, flares_after, criterion='MX_Q'):
     if not label:
         if neg == 'Q':
             if len(flares_before) > 0 or len(flares_after) > 0:
+                return None
+        elif neg == 'ABCQ':
+            flares = '|'.join([flares_before, flares_after])
+            if 'M' in flares or 'X' in flares:
                 return None
         else:
             raise
@@ -273,16 +281,13 @@ if __name__ == '__main__':
 
     # begin preprocessing
     test_seed()
+    np.random.seed(args.seed)
     for criterion in ['MX_Q']:
         for val_hours in [6, 12, 24]:
-            for dataset in ['smarp', 'sharp']:
-                output_dir = os.path.join(args.processed_data_dir,
-                                          f'{criterion}_{val_hours}hr',
-                                          dataset)
-                logger.info(output_dir)
-                print(output_dir)
-                main(dataset,
-                     split_num=5,
-                     output_dir=output_dir,
-                     val_time=timedelta(hours=val_hours),
-                     criterion=criterion)
+            output_dir = f'{criterion}_{val_hours}hr'
+            logger.info(output_dir)
+            print(output_dir)
+            main(split_num=5,
+                 output_dir=output_dir,
+                 val_time=timedelta(hours=val_hours),
+                 criterion=criterion)

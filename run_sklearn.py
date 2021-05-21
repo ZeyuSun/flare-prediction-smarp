@@ -1,12 +1,12 @@
-import os
 import time
+import logging
 import argparse
+from pathlib import Path
 import cProfile, pstats
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import plotly.express as px
-import wandb
 import joblib
 import mlflow
 import graphviz
@@ -14,9 +14,9 @@ from skopt import BayesSearchCV
 from skopt.plots import plot_objective
 from sklearn.preprocessing import StandardScaler
 from imblearn.under_sampling import RandomUnderSampler
-from imblearn.pipeline import Pipeline, make_pipeline
-from sklearn.model_selection import GridSearchCV, cross_val_score
-from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay, f1_score, make_scorer, roc_curve, auc, plot_confusion_matrix, plot_roc_curve
+from imblearn.pipeline import Pipeline
+from sklearn.model_selection import GridSearchCV
+from sklearn.metrics import confusion_matrix, make_scorer, plot_confusion_matrix, plot_roc_curve
 
 from sklearn.discriminant_analysis import QuadraticDiscriminantAnalysis
 from sklearn.neighbors import KNeighborsClassifier
@@ -31,15 +31,21 @@ from metrics import tss, hss2, roc_auc_score, get_scores_from_cm, optimal_tss, d
 from utils import get_output
 
 
-def get_data(filepath):
-    df = pd.read_csv(filepath)
+def fuse_sharp_to_smarp(df):
+    d = np.load(Path(cfg['data_root']) / 'auxiliary' / 'sharp2smarp.npy',
+                allow_pickle=True).item()
+    for k, v in d.items():
+        df[k] = df[k] * v['coef'] + v['intercept']
+    return df
+
+
+def get_data(database_dir, dataset, split):
+    df = pd.read_csv(database_dir / f'{dataset}_{split}.csv')
     df['flares'].fillna('', inplace=True)
     assert df.isnull().any(axis=None) == False
 
-    if 'sharp' in filepath:
-        sharp2smarp = np.load('datasets/sharp2smarp.npy', allow_pickle=True).item()
-        for k, v in sharp2smarp.items():
-            df[k] = df[k] * v['coef'] + v['intercept']
+    if dataset == 'sharp':
+        df = fuse_sharp_to_smarp(df)
 
     X = df[cfg['features']].to_numpy()
     y = df['label'].to_numpy()
@@ -47,12 +53,12 @@ def get_data(filepath):
     return X, y
 
 
-def load_dataset(dataset):
-    X_train1, y_train1 = get_data('datasets/smarp/train.csv')
-    X_test1, y_test1 = get_data('datasets/smarp/test.csv')
+def load_dataset(database, dataset):
+    X_train1, y_train1 = get_data(database, 'sharp', 'train')
+    X_test1, y_test1 = get_data(database, 'sharp', 'train')
 
-    X_train2, y_train2 = get_data('datasets/sharp/train.csv')
-    X_test2, y_test2 = get_data('datasets/sharp/test.csv')
+    X_train2, y_train2 = get_data(database, 'sharp', 'train')
+    X_test2, y_test2 = get_data(database, 'sharp', 'train')
 
     if dataset == 'combined':
         X_train = np.concatenate((X_train1, X_test1, X_train2))
@@ -85,17 +91,12 @@ def load_dataset(dataset):
     return Z_train, Z_test, y_train, y_test
 
 
-def evaluate(dataset, model, save_dir='outputs'):
-    if isinstance(model, str):
-        import pickle
-        model = pickle.load(model)
-
-    X_train, X_test, y_train, y_test = load_dataset(dataset)
+def evaluate(X_test, y_test, model, save_dir='outputs'):
     y_pred = model.predict(X_test)
     cm = confusion_matrix(y_test, y_pred)
 
     plot_confusion_matrix(model, X_test, y_test)
-    save_path = os.path.join(save_dir, 'confusion_matrix.png')
+    save_path = save_dir / 'confusion_matrix.png'
     plt.savefig(save_path)
     mlflow.log_artifact(save_path)
     #mlflow.log_figure(plt.gcf(), 'confusion_matrix_figure.png')
@@ -104,11 +105,11 @@ def evaluate(dataset, model, save_dir='outputs'):
     scorer = make_scorer(roc_auc_score, needs_threshold=True)
     auc = scorer(model, X_test, y_test)
     plot_roc_curve(model, X_test, y_test) #TODO: mark decision threshold
-    plt.savefig(os.path.join(save_dir, 'roc.png'))
+    plt.savefig(save_dir / 'roc.png')
     mlflow.log_figure(plt.gcf(), 'roc.png')
     y_score = get_output(model, X_test)
     tss_opt = optimal_tss(y_test, y_score)
-    plt.savefig(os.path.join(save_dir, 'ssp.png'))
+    plt.savefig(save_dir / 'ssp.png')
     mlflow.log_figure(draw_ssp(y_test, y_score), 'ssp.png')
     #plt.show()
 
@@ -117,7 +118,7 @@ def evaluate(dataset, model, save_dir='outputs'):
         'auc': auc,
         'tss_opt': tss_opt,
     })
-    save_path = os.path.join(save_dir, 'best_model_test_scores.md')
+    save_path = save_dir / 'best_model_test_scores.md'
     pd.DataFrame(scores, index=[0,]).to_markdown(save_path, tablefmt='grid')
 
     # Inspect
@@ -129,7 +130,7 @@ def evaluate(dataset, model, save_dir='outputs'):
                                    class_names=True,
                                    filled=True)
         graph = graphviz.Source(dot_data, format='png')
-        save_path = os.path.join(save_dir, 'tree_graphviz.png')
+        save_path = save_dir / 'tree_graphviz.png'
         graph.render(save_path)
         mlflow.log_artifact(save_path)
     if isinstance(estimator, RandomForestClassifier):
@@ -154,12 +155,11 @@ def evaluate(dataset, model, save_dir='outputs'):
     #              f"{r.importances_mean[i]:.3f}"
     #              f" +/- {r.importances_std[i]:.3f}")
 
+    plt.close('all')
     return scores
 
 
-def tune(dataset, Model, param_space, method='grid', save_dir='outputs'):
-    X_train, X_test, y_train, y_test = load_dataset(dataset)
-
+def tune(X_train, y_train, Model, param_space, method='grid', save_dir='outputs'):
     #scorer = make_scorer(hss2)
     scorer = make_scorer(roc_auc_score, needs_threshold=True)
 
@@ -193,7 +193,7 @@ def tune(dataset, Model, param_space, method='grid', save_dir='outputs'):
                                #pre_dispatch default to'2*n_jobs'. Can't be None. See joblib
                                cv=cfg['bayes']['cv'], # if integer, StratifiedKFold is used by default
                                refit=True, # default True
-                               verbose=1)
+                               verbose=0)
         search.fit(X_train, y_train)
         # Partial Dependence plots of the (surrogate) objective function
         # Not working for smoke test
@@ -214,38 +214,31 @@ def tune(dataset, Model, param_space, method='grid', save_dir='outputs'):
                     ['mean_test_score', 'score_mean'],
                     ['rank_test_score', 'rank']]})
 
-    save_path = os.path.join(save_dir, 'cv_results.csv')
+    save_path = save_dir / 'cv_results.csv'
     df.to_csv(save_path)
     mlflow.log_artifact(save_path)
 
-    save_path = os.path.join(save_dir, 'cv_results.md')
+    save_path = save_dir / 'cv_results.md'
     df.to_markdown(save_path, tablefmt='grid')
     mlflow.log_artifact(save_path)
-
-    print(f'CV results of {Model.__name__} on {dataset}:')
-    print(df.to_markdown(tablefmt='grid'))
-    print()
 
     fig = px.parallel_coordinates(df, color="score_mean",
                                   dimensions=df.columns,
                                   #color_continuous_scale=px.colors.diverging.Tealrose,
                                   #color_continuous_midpoint=2
                                  )
-    save_path = os.path.join(save_dir, 'parallel_coordinates.html')
-    fig.write_html(save_path)
+    save_path = save_dir / 'parallel_coordinates.html'
+    fig.write_html(save_path.open(mode='w')) # alternatively, str(path.resolve())
     mlflow.log_artifact(save_path)
     #fig.show()
 
-    joblib.dump(search, os.path.join(save_dir, 'model.joblib'))
+    joblib.dump(search, save_dir / 'model.joblib')
     mlflow.sklearn.log_model(search, 'model')
 
-    return search
+    return search, df
 
 
-def sklearn_main(output_dir='outputs'):
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
-
+def sklearn_main(database_dir):
     Models = [
         #KNeighborsClassifier,
         #QuadraticDiscriminantAnalysis,
@@ -345,29 +338,34 @@ def sklearn_main(output_dir='outputs'):
 
     results = []
     for dataset in ['smarp', 'sharp', 'combined']:
+        X_train, X_test, y_train, y_test = load_dataset(database_dir, dataset)
         for Model in Models:
             t_start = time.time()
-            run_dir = os.path.join(output_dir, f'{Model.__name__}_{dataset}')
-            if not os.path.exists(run_dir):
-                os.makedirs(run_dir)
-
             param_space = distributions[Model.__name__]
 
-            with mlflow.start_run(run_name=cfg['run_name']) as run:
-                best_model = tune(dataset, Model, param_space, method='bayes', save_dir=run_dir)
-                # Alternatively, param_space = grids[Model.__name__] and use 'grid' method
+            run_name = '_'.join([database_dir.name, dataset, Model.__name__])
+            run_dir = Path(cfg['output_dir']) / run_name
+            run_dir.mkdir(parents=True, exist_ok=True)
+            with mlflow.start_run(run_name=run_name, nested=True) as run:
 
-                scores = evaluate(dataset, best_model, save_dir=run_dir)
+                best_model, df = tune(X_train, y_train, Model, param_space, method='bayes', save_dir=run_dir)
+                # Alternatively, param_space = grids[Model.__name__] and use 'grid' method
+                print(f'\nCV results of {Model.__name__} on {database_dir} {dataset}:')
+                print(df.to_markdown(tablefmt='grid'))
+
+                scores = evaluate(X_test, y_test, best_model, save_dir=run_dir)
 
                 #mlflow.log_param('sampling_strategy', best_model.best_params_['rus__sampling_strategy'])
                 mlflow.log_params({k.replace('model__', ''): v for k, v in
                     best_model.best_params_.items() if k.startswith('model__')})
-                mlflow.set_tag('estimator_name', Model.__name__)
+                mlflow.set_tag('database_name', database_dir.name)
                 mlflow.set_tag('dataset_name', dataset)
+                mlflow.set_tag('estimator_name', Model.__name__)
                 mlflow.log_metrics(scores)
                 #mlflow.sklearn.log_model(best_model, 'mlflow_model')
 
             r = {
+                'database': database_dir.name,
                 'dataset': dataset,
                 'model': Model.__name__,
                 'time': time.time() - t_start,
@@ -379,29 +377,35 @@ def sklearn_main(output_dir='outputs'):
             results.append(r)
 
     results_df = pd.DataFrame(results)
-    save_path = os.path.join(output_dir, f'results')
-    results_df.to_markdown(save_path+'.md', tablefmt='grid')
-    results_df.to_csv(save_path+'.csv')
+    save_path = Path(cfg['output_dir']) / f'{database_dir.name}_results.md'
+    results_df.to_markdown(save_path, tablefmt='grid')
+    results_df.to_csv(save_path.with_suffix('.csv'))
     print(results_df.to_markdown(tablefmt='grid'))
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('-s', '--smoke', action='store_true',
-                        help='Smoke test')
-    parser.add_argument('-r', '--run_name', default='alpha_no_flareindex_no_smallflares',
-                        help='MLflow run name')
+    parser.add_argument('-d', '--data_root', default='datasets')
+    parser.add_argument('-s', '--smoke', action='store_true')
+    parser.add_argument('-e', '--experiment_name', default='experiment')
+    parser.add_argument('-r', '--run_name', default='beta')
+    parser.add_argument('-o', '--output_dir', default='outputs')
     args = parser.parse_args()
 
     cfg = {
         'features': ['AREA', 'USFLUX', 'MEANGBZ', 'R_VALUE'],
-        'smoke': args.smoke,
-        'run_name': args.run_name,
+        'bayes': {
+            'n_iter': 20,
+            'n_jobs': 20,
+            'n_points': 4,
+            'cv': 5,
+        },
     }
+    cfg.update(vars(args))
     if args.smoke:
         cfg.update({
             'experiment_name': 'smoke',
-            'output_root': 'outputs_smoke',
+            'output_dir': 'outputs_smoke',
             'bayes': {
                 'n_iter': 6,
                 'n_jobs': 2,
@@ -409,21 +413,17 @@ if __name__ == '__main__':
                 'cv': 2,
             },
         })
-    else:
-        cfg.update({
-            'experiment_name': 'experiment',
-            'output_root': 'outputs',
-            'bayes': {
-                'n_iter': 50,
-                'n_jobs': 20,
-                'n_points': 4,
-                'cv': 5,
-            },
-        })
 
+    t_start = time.time()
     mlflow.set_experiment(cfg['experiment_name'])
-    output_dir = os.path.join(cfg['output_root'], cfg['run_name'])
-    with cProfile.Profile() as p:
-        sklearn_main(output_dir)
+    with mlflow.start_run(run_name=cfg['run_name']) as run:
+        databases = [p for p in (Path(cfg['data_root']) / 'preprocessed').iterdir() if p.is_dir()]
+        # databases = [Path(cfg['data_root']) / 'preprocessed' / d for d in [
+        #     'MX_Q_12hr_balanced',
+        #     'MX_Q_6hr_balanced',
+        # ]]
+        logging.info(databases)
+        for database in databases:
+            sklearn_main(database)
 
-    pstats.Stats(p).sort_stats('cumtime').print_stats(50)
+    print('Run time: {} s'.format(time.time() - t_start))
