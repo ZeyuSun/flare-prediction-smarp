@@ -1,0 +1,21 @@
+DATA:
+  FEATURES: [
+    'MAGNETOGRAM'
+  ]
+  NUM_FRAMES: 1
+  HEIGHT: 64
+  WIDTH: 128
+  TRANSFORMS: [
+    'Resize',
+    'Standardize'
+  ]
+
+LEARNER:
+  CLASS_WEIGHT: 'balanced'
+  #LEARNING_RATE: 1e-3
+  MODEL:
+    NAME: 'SimpleC3D'
+    SETTINGS: 'cnn'
+
+TRAINER:
+  max_epochs: 15

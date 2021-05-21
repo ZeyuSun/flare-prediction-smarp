@@ -17,20 +17,22 @@ SETTINGS = {
         'out_channels': [8, 8, 16], # more channels to compensate for 5 -> 121
         'kernels': [[5, 5, 5], [3, 3, 3], [3, 3, 3]],
         'paddings': [[2, 2, 2], [1, 1, 1], [1, 1, 1]],
-        "poolings": [[2, 4, 4], [2, 2, 2], [2, 2, 2]],
+        'poolings': [[2, 4, 4], [2, 2, 2], [2, 2, 2]],
+        'out_features': [512, 64, 32],
     },
     'c2d': {
         'out_channels': [4, 8, 16],
         'kernels': [[121, 5, 5], [1, 3, 3], [1, 3, 3]],
         'paddings': [[0, 2, 2], [0, 1, 1], [0, 1, 1]],
-        "poolings": [[1, 4, 4], [1, 2, 2], [1, 2, 2]],
+        'poolings': [[1, 4, 4], [1, 2, 2], [1, 2, 2]],
+        'out_features': [512, 64, 32],
     },
     'cnn': {
         'out_channels': [16, 16, 16],
         'kernels': [[1, 5, 5], [1, 3, 3], [1, 3, 3]],
         'paddings': [[0, 2, 2], [0, 1, 1], [0, 1, 1]],
-        "poolings": [[1, 2, 2], [1, 2, 2], [1, 2, 2]],
-        'out_features': [64, 32, 2],
+        'poolings': [[1, 2, 2], [1, 2, 2], [1, 2, 2]],
+        'out_features': [64, 32],
     },
 }
 
@@ -45,7 +47,7 @@ class SimpleC3D(nn.Module):
             input_shape (tuple): (C,T,H,W)
         """
         super().__init__()
-        self.register_buffer('loss_weight', torch.tensor([1.0, cfg.LEARNER.LOSS_PN_RATIO]))
+        self.set_class_weight(cfg)
         self.result = {}
 
         input_shape = (1, cfg.DATA.NUM_FRAMES, cfg.DATA.HEIGHT, cfg.DATA.WIDTH)  # (1, 121, 64, 128)
@@ -74,16 +76,25 @@ class SimpleC3D(nn.Module):
         ]))
         fc_input_dim = self.infer_output_shape(self.convs, input_shape).numel()
 
-        self.linear1 = nn.Linear(fc_input_dim, out_features[0])
-        self.bn_lin1 = nn.BatchNorm1d(out_features[0])
-        self.linear2 = nn.Linear(out_features[0], out_features[1])
-        self.bn_lin2 = nn.BatchNorm1d(out_features[1])
-        #self.linear3 = nn.Linear(64, 64)
-        #self.linear4 = nn.Linear(64, 32)
-        self.linear5 = nn.Linear(out_features[1], out_features[2])
+        out_features = [fc_input_dim] + out_features
+        self.linears = nn.Sequential()
+        for i in range(1, len(out_features)):
+            self.linears.add_module(f'linear{i}', nn.Linear(out_features[i-1], out_features[i]))
+            self.linears.add_module(f'relu_lin{i}', nn.ReLU())
+            #self.linears.add_module(f'bn_lin{i}', nn.BatchNorm1d(out_features[i]))
+        self.linears.add_module(f'linear{len(out_features)}', nn.Linear(out_features[-1], 2))
 
         print(self.infer_output_shape(self.convs, input_shape), fc_input_dim)
         summary(self.cuda(), (input_shape))
+
+    def set_class_weight(self, cfg):
+        if cfg.LEARNER.CLASS_WEIGHT is None:
+            class_weight = [1, 1]
+        elif cfg.LEARNER.CLASS_WEIGHT == 'balanced':
+            class_weight = [1 / w for w in cfg.DATA.CLASS_WEIGHT]
+        else:
+            class_weight = cfg.LEARNER.CLASS_WEIGHT
+        self.register_buffer('class_weight', torch.tensor(class_weight, dtype=torch.float))
 
     def infer_output_shape(self, model, input_shape):
         input = torch.zeros(1, *input_shape)
@@ -94,16 +105,12 @@ class SimpleC3D(nn.Module):
         x = self.convs(x)
         x = torch.flatten(x, 1)
 
-        x = F.leaky_relu(self.linear1(x))
-        x = F.leaky_relu(self.linear2(x))
-        #x = F.leaky_relu(self.linear3(x))
-        #x = F.leaky_relu(self.linear4(x))
-        x = self.linear5(x)
+        x = self.linears(x)
         return x
 
     def get_loss(self, output, target):
         log_prob = F.log_softmax(output, dim=-1)
-        loss = F.nll_loss(log_prob, target, weight=self.loss_weight, reduction='mean')
+        loss = F.nll_loss(log_prob, target, weight=self.class_weight, reduction='mean')
 
         self.result['y_true'] = target
         self.result['y_prob'] = torch.exp(log_prob[:,1])
@@ -117,8 +124,7 @@ class SimpleLSTM(nn.Module):
 
     def __init__(self, cfg):
         super().__init__()
-        #self.register_buffer('loss_weight', torch.tensor([1., pn_ratio]))
-        self.register_buffer('loss_weight', torch.tensor([1.0, cfg.LEARNER.LOSS_PN_RATIO]))
+        self.set_class_weight(cfg)
         self.result = {}
 
         self.lstm = nn.LSTM(
@@ -132,8 +138,17 @@ class SimpleLSTM(nn.Module):
         #self.loss = nn.BCELoss(weight=) # weight has to be of size batch_num
         # CrossEntropyLoss = LogSoftmax + NLLLoss
         # self.loss_func = nn.CrossEntropyLoss(
-        #     weight=self.loss_weight,
+        #     weight=self.class_weight,
         # )
+
+    def set_class_weight(self, cfg):
+        if cfg.LEARNER.CLASS_WEIGHT is None:
+            class_weight = [1, 1]
+        elif cfg.LEARNER.CLASS_WEIGHT == 'balanced':
+            class_weight = [1 / w for w in cfg.DATA.CLASS_WEIGHT]
+        else:
+            class_weight = cfg.LEARNER.CLASS_WEIGHT
+        self.register_buffer('class_weight', torch.tensor(class_weight, dtype=torch.float))
 
     def forward(self, x):
         x, (hn, cn) = self.lstm(x, None) # x.shape = [N (batch), T (seq), C (channels)]
@@ -142,7 +157,7 @@ class SimpleLSTM(nn.Module):
 
     def get_loss(self, output, target):
         log_prob = F.log_softmax(output, dim=-1)
-        loss = F.nll_loss(log_prob, target, weight=self.loss_weight, reduction='mean')
+        loss = F.nll_loss(log_prob, target, weight=self.class_weight, reduction='mean')
 
         self.result['y_true'] = target
         self.result['y_prob'] = torch.exp(log_prob[:,1])

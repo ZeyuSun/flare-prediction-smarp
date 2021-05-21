@@ -147,6 +147,7 @@ def _check_and_coerce_cfg_value_type(replacement, original, key, full_key):
         return replacement
     if replacement_type == list and original_type == int: # for gpus specifically
         return replacement
+    return replacement # anyway...
     #### MODIFICATION END
 
     raise ValueError(

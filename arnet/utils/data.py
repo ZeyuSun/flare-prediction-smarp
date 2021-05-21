@@ -124,7 +124,7 @@ def query_parameters(prefix, arpnum, t_recs, keywords, redis=True):
         # if any([s is None for s in series]):
         #     print(series)
         records = [json.loads(b) if b else {} for b in buff]
-        df = pd.DataFrame(records, index=t_recs)
+        df = pd.DataFrame(records, index=t_recs)  # Takes up 61% of the time
     else:
         raise
     return df

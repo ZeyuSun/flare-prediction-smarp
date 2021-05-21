@@ -1,5 +1,6 @@
 import os
 import functools
+from pathlib import Path
 from datetime import datetime, timedelta
 import pandas as pd
 import drms
@@ -13,11 +14,6 @@ from arnet.transforms import get_transform
 from arnet.constants import CONSTANTS
 
 
-PROCESSED_DATA_DIR = '/home/zeyusun/work/flare-prediction-smarp/datasets/M1.0_24hr_balanced'
-SPLIT_DIRS = {
-    'HARP': os.path.join(PROCESSED_DATA_DIR, 'sharp'),
-    'TARP': os.path.join(PROCESSED_DATA_DIR, 'smarp'),
-}
 DATA_DIRS = {
     'HARP': '/data2/SHARP/image/',
     'TARP': '/data2/SMARP/image/',
@@ -94,29 +90,18 @@ class ActiveRegionDataset(Dataset):
             video = self.transform(video)
         return video
 
-    @functools.lru_cache(maxsize=8)
-    def load_header(self, prefix, arpnum):
-        if prefix == 'HARP':
-            dataset = 'sharp'
-        elif prefix == 'TARP':
-            dataset = 'smarp'
-        else:
-            raise
-        header_df = read_header(dataset, arpnum)
-        #header_file = os.path.join(HEADER_DIRS[prefix], f'{prefix}{arpnum:06d}_ATTRS.csv')
-        #header_df = pd.read_csv(header_file)
-        # df['T_REC'] = df['T_REC'].apply(drms.to_datetime) # time consuming
-        return header_df
-
     def load_parameters(self, prefix, arpnum, t_end):
-        t_end = drms.to_datetime(t_end)
+        t_end = datetime.strptime(t_end, '%Y-%m-%d %H:%M:%S') #2013-07-03 01:36:00
         t_start = t_end - timedelta(minutes=96) * (self.num_frames - 1)
         t_recs = pd.date_range(t_start, t_end, freq='96min').strftime('%Y.%m.%d_%H:%M:%S_TAI')
         df = query_parameters(prefix, arpnum, t_recs, self.features)
         df = df.fillna(method='bfill')
-        if df.isna().any(axis=None):
-            print(df)
-            breakpoint()
+
+        # Check na is time consuming. If na, loss will be nan
+        #if df.isna().any(axis=None):
+        #    print(df)
+        #    breakpoint()
+
         #if self.transform:
         #    df = self.transform(df)
         df = self.standardize(df, prefix)
@@ -131,9 +116,9 @@ class ActiveRegionDataset(Dataset):
             dataset = 'SMARP'
         else:
             raise
-        mean = {k: v for k, v in CONSTANTS[dataset + '_MEAN'].items() if k in self.features}
-        std = {k: v for k, v in CONSTANTS[dataset + '_STD'].items() if k in self.features}
-        df = (df - mean) / std
+        mean = [v for k, v in CONSTANTS[dataset + '_MEAN'].items() if k in self.features]
+        std = [v for k, v in CONSTANTS[dataset + '_STD'].items() if k in self.features]
+        df[self.features] = (df.values - mean) / std  # runtime: arr - arr < df - arr
         return df
 
 
@@ -145,20 +130,20 @@ class ActiveRegionDataModule(pl.LightningDataModule):
     def __init__(self, cfg):
         super().__init__()
         self.cfg = cfg
-        self.construct_transforms()
-        self.construct_datasets()
+        self._construct_transforms()
+        self._construct_datasets()
         self.testmode = 'test'
 
-    def construct_transforms(self):
+    def _construct_transforms(self):
         transforms = [get_transform(name, self.cfg)
                       for name in self.cfg.DATA.TRANSFORMS]
         self.transform = Compose(transforms)
 
-    def construct_datasets(self):
-        smarp_train = pd.read_csv(os.path.join(SPLIT_DIRS['TARP'], 'train.csv'))
-        smarp_test  = pd.read_csv(os.path.join(SPLIT_DIRS['TARP'], 'test.csv'))
-        sharp_train = pd.read_csv(os.path.join(SPLIT_DIRS['HARP'], 'train.csv'))
-        sharp_test  = pd.read_csv(os.path.join(SPLIT_DIRS['HARP'], 'test.csv'))
+    def _construct_datasets(self):
+        smarp_train = pd.read_csv(Path(self.cfg.DATA.DATABASE) / 'smarp_train.csv')
+        smarp_test  = pd.read_csv(Path(self.cfg.DATA.DATABASE) / 'smarp_test.csv')
+        sharp_train = pd.read_csv(Path(self.cfg.DATA.DATABASE) / 'sharp_train.csv')
+        sharp_test  = pd.read_csv(Path(self.cfg.DATA.DATABASE) / 'sharp_test.csv')
         if self.cfg.DATA.DATASET == 'sharp':
             self.df_train = sharp_train
             self.df_val = sharp_test
@@ -176,6 +161,11 @@ class ActiveRegionDataModule(pl.LightningDataModule):
         self.df_train = self.df_train.sample(frac=1)
         #self.df_vis = sharp_test.iloc[:4]
         self.df_vis = sharp_train.loc[sharp_train['arpnum'] == 377].iloc[0:8:2]
+
+    def set_class_weight(self, cfg):
+        p = self.df_train['label'].mean()
+        cfg.DATA.CLASS_WEIGHT = [1-p, p]
+        return cfg
 
     def train_dataloader(self):
         dataset = ActiveRegionDataset(self.df_train,

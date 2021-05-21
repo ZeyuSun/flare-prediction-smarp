@@ -1,0 +1,20 @@
+DATA:
+  FEATURES: [
+    'AREA', 'USFLUX', 'MEANGBZ', 'R_VALUE',
+  ]
+  NUM_FRAMES: 16
+  #HEIGHT: 64
+  #WIDTH: 128
+  TRANSFORMS: []
+  BATCH_SIZE: 64
+  NUM_WORKERS: 16
+
+LEARNER:
+  CLASS_WEIGHT: 'balanced'
+  #LEARNING_RATE: 1e-3
+  MODEL:
+    NAME: 'SimpleLSTM'
+    #SETTINGS: 'cnn'
+
+TRAINER:
+  max_epochs: 20

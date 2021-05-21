@@ -105,7 +105,8 @@ def get_metrics_probabilistic(y_true, y_prob, criterion='hss2'):
     =====================================================
     """
     import torch
-    from sklearn.metrics import roc_auc_score
+    from pytorch_lightning.metrics.functional import auroc
+    #from sklearn.metrics import roc_auc_score
 
     thresh = get_thresh(y_true, y_prob, criterion=criterion)
     y_pred = y_prob > thresh
@@ -114,8 +115,10 @@ def get_metrics_probabilistic(y_true, y_prob, criterion='hss2'):
 
     y_clim = torch.mean(y_true.double())
     bss = 1 - torch.mean((y_prob - y_true)**2) / torch.mean((y_prob - y_clim)**2)
-    auc = roc_auc_score(y_true.detach().cpu().numpy(),
-                        y_prob.detach().cpu().numpy())
+    try:
+        auc = auroc(y_prob, y_true)
+    except ValueError: # Only one class present in y_true. ROC AUC score is not defined in that case.
+        auc = torch.tensor(float('NaN'))
     scores.update({
         'auc': auc,
         'bss': bss,
