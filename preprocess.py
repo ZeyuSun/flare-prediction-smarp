@@ -7,7 +7,6 @@ from functools import partial
 from datetime import datetime, timedelta
 import numpy as np
 import pandas as pd
-import drms
 from tqdm import tqdm
 
 from arnet.utils import read_header, query
@@ -35,36 +34,60 @@ def get_image_filepath(dataset, arpnum, t_rec):
         raise
 
 
-def split(dataset, split_num):
-    if dataset == 'sharp':
-        header_dir = os.path.join(args.raw_data_dir, 'SHARP/header_vec')
-    elif dataset == 'smarp':
-        header_dir = os.path.join(args.raw_data_dir, 'SMARP/header')
+def get_label(flares_observed, flares_future, criterion='M_Q'):
+    """Assign a label to a sample given observed and future flares.
+
+    `flares_observed` and `flares_futures` falls into one of the following
+    three categories, given threshold T:
+        Q: quiet. S: small flares (<T). L: large flares (>=T)
+
+    Their combinations can be represented by a 3x3 matrix:
+                Future
+         Obs    Q   S   L
+          Q    ( ) ( ) ( )
+          S    ( ) ( ) ( )
+          L    ( ) ( ) ( )
+
+    `criterion` is in the form of `threshold_negative` and is used to select
+    positive (+) and negative (-) samples or discard samples ( ).
+                'T_Q'           'T_QS'          'T_QSL'
+                Future          Future          Future
+         Obs    Q   S   L       Q   S   L       Q   S   L
+          Q    (-) ( ) (+)     (-) (-) (+)     (-) (-) (+)
+          S    ( ) ( ) (+)     (-) (-) (+)     (-) (-) (+)
+          L    ( ) ( ) (+)     ( ) ( ) (+)     (-) (-) (+)
+
+    Args:
+        flares_observed: List of flares in the observation time
+        flares_future: List of flares in the prediction window
+        criterion: Classification criterion.
+
+    Returns:
+        label: True, False, or None
+    """
+    THRESHOLDS = ['C', 'M', 'X']
+    thresh, neg = criterion.split('_')
+    assert thresh in THRESHOLDS
+    if any([f[0] >= thresh for f in flares_future]):
+        label = True
     else:
-        raise
-    header_files = sorted(os.listdir(header_dir))
-    numbers = np.random.permutation([int(f[4:10]) for f in header_files])
+        if neg == 'Q':
+            if len(''.join(flares_observed + flares_future)) == 0:
+                label = False
+            else:
+                label = None
+        elif neg == 'QS':
+            flares = '|'.join(flares_observed)
+            if any([T in flares for T in THRESHOLDS if T >= thresh]):
+                label = None
+            else:
+                label = False
+        elif neg == 'QSL':
+            label = False
+        else:
+            raise
 
-    train_size = (len(numbers) // split_num) * (split_num - 1)
-    splits = numbers[:train_size].reshape(split_num-1, -1).tolist()
-    splits += [numbers[train_size:].tolist()]
-    return splits
-
-
-def select(dataset, arpnums, val_time, criterion):
-    # Non-parallel
-    #samples = map(partial(select_per_arp, dataset), arpnums)
-
-    # Parallel
-    with Pool(24) as pool:
-        closure = partial(select_per_arp, dataset,
-                          val_time=val_time, criterion=criterion)
-        samples = pool.map(closure, arpnums)
-
-    samples = [s for s in samples if s is not None]
-    samples = [i for s in samples for i in s]  # concatenate
-    sample_df = pd.DataFrame(samples)
-    return sample_df
+    return label
 
 
 #@profile
@@ -177,114 +200,45 @@ def select_per_arp(dataset, arpnum,
     return samples
 
 
+def select(dataset, arpnums, val_time, criterion):
+    # Non-parallel
+    #samples = map(partial(select_per_arp, dataset), arpnums)
+
+    # Parallel
+    with Pool(24) as pool:
+        closure = partial(select_per_arp, dataset,
+                          val_time=val_time, criterion=criterion)
+        samples = pool.map(closure, arpnums)
+
+    samples = [s for s in samples if s is not None]
+    samples = [i for s in samples for i in s]  # concatenate
+    sample_df = pd.DataFrame(samples)
+    return sample_df
+
+
+def get_arpnums(dataset):
+    if dataset == 'sharp':
+        header_dir = os.path.join(args.raw_data_dir, 'SHARP/header_vec')
+    elif dataset == 'smarp':
+        header_dir = os.path.join(args.raw_data_dir, 'SMARP/header')
+    else:
+        raise
+    header_files = sorted(os.listdir(header_dir))
+    arpnums = [int(f[4:10]) for f in header_files]
+
+    return arpnums
+
+
 def main(split_num, output_dir, val_time, criterion):
     output_dir = os.path.join(args.processed_data_dir, output_dir)
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
-    balanced_dir = output_dir + '_balanced'
-    if not os.path.exists(balanced_dir):
-        os.makedirs(balanced_dir)
 
     for dataset in ['smarp', 'sharp']:
-        splits = split(dataset, split_num)
-        df_list = []
-        for key, arpnums in tqdm(enumerate(splits)):
-            logger.info(f'{dataset} split {key} / {len(splits)-1}: {arpnums}')
-            df = select(dataset, arpnums, val_time, criterion)
-            df_list.append(df)
-
-        train_df = pd.concat(df_list[:split_num-1]).reset_index(drop=True) #TODO: sort by dataset/arpnum
-        train_df.to_csv(os.path.join(output_dir, f'{dataset}_train.csv'), index=False)
-
-        train_df = rus(train_df)
-        train_df.to_csv(os.path.join(balanced_dir, f'{dataset}_train.csv'), index=False)
-
-        test_df = df_list[-1]
-        test_df.to_csv(os.path.join(output_dir, f'{dataset}_test.csv'), index=False)
-
-        test_df = rus(test_df)
-        test_df.to_csv(os.path.join(balanced_dir, f'{dataset}_test.csv'), index=False)
-
-
-def rus(df, seed=False):
-    """Random Undersampling
-
-    Args:
-        seed: default is False, do not reset seed. Pass int/None to reset a
-            seed particularly/randomly.
-    """
-    if seed is None or isinstance(seed, int):
-        np.random.seed(seed)
-    pos_mask = df['label'].to_numpy()
-    neg_mask = (~df['label']).to_numpy()
-    drop_idx = np.random.choice(np.nonzero(neg_mask)[0],
-                                size=neg_mask.sum() - pos_mask.sum(),
-                                replace=False)
-    neg_mask[drop_idx] = False
-    df = df.iloc[pos_mask | neg_mask].reset_index(drop=True)
-    return df
-
-
-def get_label(flares_observed, flares_future, criterion='M_Q'):
-    """Assign a label to a sample given observed and future flares.
-
-    `flares_observed` and `flares_futures` falls into one of the following
-    three categories, given threshold T:
-        Q: quiet. S: small flares (<T). L: large flares (>=T)
-
-    Their combinations can be represented by a 3x3 matrix:
-                Future
-         Obs    Q   S   L
-          Q    ( ) ( ) ( )
-          S    ( ) ( ) ( )
-          L    ( ) ( ) ( )
-
-    `criterion` is in the form of `threshold_negative` and is used to select
-    positive (+) and negative (-) samples or discard samples ( ).
-                'T_Q'           'T_QS'          'T_QSL'
-                Future          Future          Future
-         Obs    Q   S   L       Q   S   L       Q   S   L
-          Q    (-) ( ) (+)     (-) (-) (+)     (-) (-) (+)
-          S    ( ) ( ) (+)     (-) (-) (+)     (-) (-) (+)
-          L    ( ) ( ) (+)     ( ) ( ) (+)     (-) (-) (+)
-
-    Args:
-        flares_observed: List of flares in the observation time
-        flares_future: List of flares in the prediction window
-        criterion: Classification criterion.
-
-    Returns:
-        label: True, False, or None
-    """
-    THRESHOLDS = ['C', 'M', 'X']
-    thresh, neg = criterion.split('_')
-    assert thresh in THRESHOLDS
-    if any([f[0] >= thresh for f in flares_future]):
-        label = True
-    else:
-        if neg == 'Q':
-            if len(''.join(flares_observed + flares_future)) == 0:
-                label = False
-            else:
-                label = None
-        elif neg == 'QS':
-            flares = '|'.join(flares_observed + flares_future)
-            if any([T in flares for T in THRESHOLDS if T >= thresh]):
-                label = False
-            else:
-                label = None
-        elif neg == 'QSL':
-            label = False
-        else:
-            raise
-
-    return label
-
-
-def test_seed():
-    np.random.seed(0)
-    a = np.random.randint(0, 65536, 10)
-    assert np.all(a==[2732, 43567, 42613, 52416, 45891, 21243, 30403, 32103, 41993, 57043])
+        logger.info(dataset)
+        arpnums = get_arpnums(dataset)
+        df = select(dataset, arpnums, val_time, criterion)
+        df.to_csv(os.path.join(output_dir, f'{dataset}.csv'), index=False)
 
 
 if __name__ == '__main__':
@@ -320,10 +274,8 @@ if __name__ == '__main__':
     # raise
 
     # begin preprocessing
-    test_seed()
     for criterion in ['M_Q', 'M_QS']:
         for val_hours in [6, 12, 24, 48]:
-            np.random.seed(args.seed)
             output_dir = f'{criterion}_{val_hours}hr'
             logger.info(output_dir)
             print(output_dir)
