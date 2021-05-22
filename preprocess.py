@@ -25,7 +25,8 @@ def get_prefix(dataset):
 
 
 def get_image_filepath(dataset, arpnum, t_rec):
-    t_rec = t_rec.strftime('%Y%m%d_%H%M%S_TAI')
+    """t_rec(str) should be in format '%Y%m%d_%H%M%S_TAI'"""
+    t_rec = datetime.strptime(t_rec, T_REC_FORMAT).strftime('%Y%m%d_%H%M%S_TAI')
     if dataset == 'sharp':
         return os.path.join(args.raw_data_dir, f'SHARP/image/{arpnum:06d}/hmi.sharp_cea_720s.{arpnum}.{t_rec}.magnetogram.fits')
     elif dataset == 'smarp':
@@ -77,88 +78,87 @@ def select_per_arp(dataset, arpnum,
     Returns:
         samples (list): a list of samples, each represented by a dictionary
     """
-    df = read_header(dataset, arpnum)
+    df = read_header(dataset, arpnum, index_col='T_REC')
     if df is None: # No matched los header for SHARP
         return None
 
+    assert df.index.is_monotonic_increasing
+
     # Only keep observations near central meridian
+    # Side effect: records with nan LON_MIN and LON_MAX will be dropped
     df = df[(df['LON_MIN'] >= LON_MIN) & (df['LON_MAX'] <= LON_MAX)]
     if len(df) == 0:
         return None
 
     # Get relevant GOES event records
-    df['NOAA_ARS'] = df['NOAA_ARS'].astype(str) # cast to str if all entries are int
+    df.loc[:, 'NOAA_ARS'] = df['NOAA_ARS'].astype(str) # cast to str if all entries are int
     noaa_ars = df['NOAA_ARS'].unique() # Series.unique returns numpy.ndarray
-    assert len(noaa_ars) == 1
+    assert len(noaa_ars) == 1 # expect all records to have the same NOAA_ARS
     noaa_ars = [int(ar) for ar in noaa_ars[0].split(',')]
     goes_ar = GOES[GOES['noaa_active_region'].isin(noaa_ars)]
 
     # For SHARP, only keep observations between 2010.10.29 and 2020.12.01
-    df['T_REC'] = df['T_REC'].apply(drms.to_datetime)
     if dataset == 'sharp':
-        df = df[(df['T_REC'] >= T_REC_MIN) &
-                (df['T_REC'] <= T_REC_MAX)]
+        #TODO: searchsorted?
+        df = df[(df.index >= T_REC_MIN) & (df.index <= T_REC_MAX)]
         if len(df) == 0:
             return None
 
     # 1st scan: read images and mark if there is nan
-    df['image_nan'] = None
-    for idx in df.index:
-        image_file = get_image_filepath(dataset, arpnum, df.loc[idx, 'T_REC'])
+    df.loc[:, 'bad_img'] = None
+    shapes = []
+    for t_rec in df.index:
+        image_file = get_image_filepath(dataset, arpnum, t_rec)
         image_data = query(image_file)
-        df.loc[idx, 'image_nan'] = np.any(np.isnan(image_data))
+        df.loc[t_rec, 'bad_img'] = np.any(np.isnan(image_data))
+        shapes.append(image_data.shape)
+
+    # Check image size consistency
+    hs, ws = zip(*shapes)
+    for ss in [hs, ws]:
+        # Frames with either dim deviating more than 2 pix from the median
+        df.loc[np.abs(ss - np.median(ss)) > 2, 'bad_img'] = True
 
     # 2nd scan: generate sequences
     samples = []
     counter = defaultdict(int)
-    for idx in df.index:
-        t_start = df.loc[idx, 'T_REC']  # sequence start
-        t_end = t_start + OBS_TIME  # sequence end; flare issuance time
-        mask = (df['T_REC'] >= t_start) & (df['T_REC'] <= t_end)
-        if len(df.loc[mask]) <= 14:
-            # Allow for at most 1 missing frames
-            # There are 16 frames (1+24*60/96) if no frame is missing
-            counter['mis_rec'] += 1
-            continue
+    for t_rec in df.index:
+        t_start = datetime.strptime(t_rec, T_REC_FORMAT)  # observation start
+        t_end = t_start + OBS_TIME  # observation end; prediction time window start
+        t_future = t_end + val_time  # prediction time window end
 
-        if (df.loc[mask, KEYWORDS].isna().sum(axis=0) > 2).any():
+        t_steps = pd.date_range(t_start, t_end, freq='96min').strftime(T_REC_FORMAT)
+        df_new = df.reindex(index=t_steps) # conformed df
+
+        if (df_new[KEYWORDS].isna().sum(axis=0) > 2).any():
             # Allow for at most 2 missing entries for each feature column
-            #print(df.loc[mask, KEYWORDS].isna())
             counter['nan_val'] += 1
             continue
 
-        if df.loc[mask, KEYWORDS].iloc[-1,:].isna().any():
+        if df_new[KEYWORDS].iloc[-1,:].isna().any():
             # The last record is used in snapshot datasets so it can't be nan
             counter['nan_val_last'] += 1
             continue
 
-        t_after = t_end + val_time
-        t_before = t_end - OBS_TIME
-        flares_after = goes_ar.loc[(goes_ar['start_time'] >= t_end.strftime(GOES_TIME_FORMAT)) &
-                                   (goes_ar['start_time'] <= t_after.strftime(GOES_TIME_FORMAT)),
-                                   'goes_class'].tolist()
-        flares_after = '|'.join(flares_after)
-        flares_before = goes_ar.loc[(goes_ar['start_time'] >= t_before.strftime(GOES_TIME_FORMAT)) &
-                                    (goes_ar['start_time'] <= t_end.strftime(GOES_TIME_FORMAT)),
+        flares_future = goes_ar.loc[(goes_ar['start_time'] >= t_end.strftime(GOES_TIME_FORMAT)) &
+                                    (goes_ar['start_time'] <= t_future.strftime(GOES_TIME_FORMAT)),
                                     'goes_class'].tolist()
-        flare_index = get_flare_index(flares_before)
-        flares_before = '|'.join(flares_before)
+        flares_observed = goes_ar.loc[(goes_ar['start_time'] >= t_start.strftime(GOES_TIME_FORMAT)) &
+                                      (goes_ar['start_time'] <= t_end.strftime(GOES_TIME_FORMAT)),
+                                      'goes_class'].tolist()
+        flare_index = get_flare_index(flares_observed)
 
-        label = get_label(flares_before, flares_after, criterion)
+        label = get_label(flares_observed, flares_future, criterion)
         if label is None:
-            counter['pos'] += 1
+            counter['obs_pos'] += 1
             continue
 
-        if df.loc[mask, 'T_REC'].iloc[-1] != t_end:
-            counter['mis_img'] += 1
+        if df_new['bad_img'].sum() >= 1:
+            counter['bad_img'] += 1
             continue
 
-        if df.loc[mask, 'image_nan'].sum() >= 1:
-            counter['nan_img'] += 1
-            continue
-
-        if df.loc[mask, 'image_nan'].iloc[-1]:
-            counter['nan_img_last'] += 1
+        if df_new['bad_img'].iloc[-1]:
+            counter['bad_img_last'] += 1
             continue
 
         sample = {
@@ -167,10 +167,10 @@ def select_per_arp(dataset, arpnum,
             't_start': t_start,
             't_end': t_end,
             'label': label,
-            'flares': flares_after,
+            'flares': '|'.join(flares_future),
             'FLARE_INDEX': flare_index,
         }
-        sample.update({k: df.loc[mask, k].iloc[-1] for k in KEYWORDS})
+        sample.update({k: df_new[k].iloc[-1] for k in KEYWORDS})
         samples.append(sample)
     logger.info('{} {}: {}/{} sequences extracted. {}'.format(
         get_prefix(dataset), arpnum, len(samples), len(df), dict(counter)))
@@ -225,26 +225,59 @@ def rus(df, seed=False):
     return df
 
 
-def get_label(flares_before, flares_after, criterion='MX_Q'):
-    """
+def get_label(flares_observed, flares_future, criterion='M_Q'):
+    """Assign a label to a sample given observed and future flares.
+
+    `flares_observed` and `flares_futures` falls into one of the following
+    three categories, given threshold T:
+        Q: quiet. S: small flares (<T). L: large flares (>=T)
+
+    Their combinations can be represented by a 3x3 matrix:
+                Future
+         Obs    Q   S   L
+          Q    ( ) ( ) ( )
+          S    ( ) ( ) ( )
+          L    ( ) ( ) ( )
+
+    `criterion` is in the form of `threshold_negative` and is used to select
+    positive (+) and negative (-) samples or discard samples ( ).
+                'T_Q'           'T_QS'          'T_QSL'
+                Future          Future          Future
+         Obs    Q   S   L       Q   S   L       Q   S   L
+          Q    (-) ( ) (+)     (-) (-) (+)     (-) (-) (+)
+          S    ( ) ( ) (+)     (-) (-) (+)     (-) (-) (+)
+          L    ( ) ( ) (+)     ( ) ( ) (+)     (-) (-) (+)
+
     Args:
-        flares_before: Flares in the observation time
-        flares_after: Flares in the prediction window
-        criterion: Classification criterion
+        flares_observed: List of flares in the observation time
+        flares_future: List of flares in the prediction window
+        criterion: Classification criterion.
+
+    Returns:
+        label: True, False, or None
     """
-    pos, neg = criterion.split('_')
-    assert pos in ['X', 'MX']
-    label = any([p in flares_after for p in pos])
-    if not label:
+    THRESHOLDS = ['C', 'M', 'X']
+    thresh, neg = criterion.split('_')
+    assert thresh in THRESHOLDS
+    if any([f[0] >= thresh for f in flares_future]):
+        label = True
+    else:
         if neg == 'Q':
-            if len(flares_before) > 0 or len(flares_after) > 0:
-                return None
-        elif neg == 'ABCQ':
-            flares = '|'.join([flares_before, flares_after])
-            if 'M' in flares or 'X' in flares:
-                return None
+            if len(''.join(flares_observed + flares_future)) == 0:
+                label = False
+            else:
+                label = None
+        elif neg == 'QS':
+            flares = '|'.join(flares_observed + flares_future)
+            if any([T in flares for T in THRESHOLDS if T >= thresh]):
+                label = False
+            else:
+                label = None
+        elif neg == 'QSL':
+            label = False
         else:
             raise
+
     return label
 
 
@@ -257,19 +290,21 @@ def test_seed():
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--raw_data_dir', default='/data2')
-    parser.add_argument('--processed_data_dir', default='datasets')
+    parser.add_argument('--processed_data_dir', default='datasets/preprocessed')
     parser.add_argument('--seed', default=0)
     args = parser.parse_args()
 
     # global variables
     LON_MIN, LON_MAX = -70, 70
-    T_REC_MIN = datetime(year=2010, month=10, day=29)
-    T_REC_MAX = datetime(year=2020, month=12, day=1)
+    T_REC_FORMAT = '%Y.%m.%d_%H:%M:%S_TAI'
+    T_REC_MIN = datetime(year=2010, month=10, day=29).strftime(T_REC_FORMAT)
+    T_REC_MAX = datetime(year=2020, month=12, day=1).strftime(T_REC_FORMAT)
     OBS_TIME = timedelta(days=1)  # observation time
-    GOES_TIME_FORMAT = '%Y-%m-%dT%H:%M:%S.000'
     KEYWORDS = ['AREA', 'USFLUX', 'MEANGBZ', 'R_VALUE']
+
+    GOES_TIME_FORMAT = '%Y-%m-%dT%H:%M:%S.000'
     GOES = pd.read_csv(os.path.join(args.raw_data_dir, 'GOES/goes.csv'))
-    GOES['goes_class'] = GOES['goes_class'].fillna('')
+    GOES = GOES.dropna(subset=['goes_class'])
     if not os.path.exists(args.processed_data_dir):
         os.makedirs(args.processed_data_dir)
     logging.basicConfig(filename=os.path.join(args.processed_data_dir, 'log_preprocess.txt'),
@@ -279,11 +314,16 @@ if __name__ == '__main__':
                         level=logging.INFO)
     logger = logging.getLogger()
 
+    # debug
+    # samples = select_per_arp('smarp', 3697, val_time=timedelta(hours=6), criterion='MX_Q')
+    # breakpoint()
+    # raise
+
     # begin preprocessing
     test_seed()
-    np.random.seed(args.seed)
-    for criterion in ['MX_Q']:
-        for val_hours in [6, 12, 24]:
+    for criterion in ['M_Q', 'M_QS']:
+        for val_hours in [6, 12, 24, 48]:
+            np.random.seed(args.seed)
             output_dir = f'{criterion}_{val_hours}hr'
             logger.info(output_dir)
             print(output_dir)

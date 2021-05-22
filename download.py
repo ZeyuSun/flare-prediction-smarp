@@ -195,11 +195,11 @@ def download_goes():
 
     goes = pd.concat(df_list)
 
-    # Empty strings in csv files will still be interpreted as NaN by pd.read_csv.
-    # Use `na_filter=False` when calling pd.read_csv or fillna('') afterwards.
-    goes['goes_class'] = goes['goes_class'].fillna('')
+    # Drop 61 records with nan class
+    goes = goes.dropna(subset=['goes_class'])
 
     # Remove two C-class events without scales
+    #TODO: keep them
     goes = goes[goes['goes_class'] != 'C']
 
     goes.to_csv(os.path.join(GOES_DIR, 'goes.csv'), index=None)
