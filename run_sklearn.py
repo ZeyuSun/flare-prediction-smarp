@@ -15,7 +15,7 @@ from skopt.plots import plot_objective
 from sklearn.preprocessing import StandardScaler
 from imblearn.under_sampling import RandomUnderSampler
 from imblearn.pipeline import Pipeline
-from sklearn.model_selection import GridSearchCV
+from sklearn.model_selection import GridSearchCV, GroupKFold, LeavePGroupsOut, GroupShuffleSplit
 from sklearn.metrics import confusion_matrix, make_scorer, plot_confusion_matrix, plot_roc_curve
 
 from sklearn.discriminant_analysis import QuadraticDiscriminantAnalysis
@@ -39,8 +39,8 @@ def fuse_sharp_to_smarp(df):
     return df
 
 
-def get_data(database_dir, dataset, split):
-    df = pd.read_csv(database_dir / f'{dataset}_{split}.csv')
+def load_data(database_dir, dataset):
+    df = pd.read_csv(database_dir / f'{dataset}.csv')
     df['flares'].fillna('', inplace=True)
     assert df.isnull().any(axis=None) == False
 
@@ -49,46 +49,69 @@ def get_data(database_dir, dataset, split):
 
     X = df[cfg['features']].to_numpy()
     y = df['label'].to_numpy()
+    groups = (df['prefix'] + df['arpnum'].apply(str)).to_numpy()
+    return X, y, groups
 
-    return X, y
+
+def group_split_data(X, y, groups, seed=None):
+    splitter = GroupShuffleSplit(n_splits=1, test_size=0.2, random_state=seed)
+    train_idx, test_idx = next(splitter.split(X, y, groups))
+    return X[train_idx], X[test_idx], \
+           y[train_idx], y[test_idx], \
+           groups[train_idx], groups[test_idx]
 
 
-def load_dataset(database, dataset):
-    X_train1, y_train1 = get_data(database, 'sharp', 'train')
-    X_test1, y_test1 = get_data(database, 'sharp', 'train')
-
-    X_train2, y_train2 = get_data(database, 'sharp', 'train')
-    X_test2, y_test2 = get_data(database, 'sharp', 'train')
-
-    if dataset == 'combined':
-        X_train = np.concatenate((X_train1, X_test1, X_train2))
-        y_train = np.concatenate((y_train1, y_test1, y_train2))
-        X_test = X_test2
-        y_test = y_test2
-    elif dataset == 'smarp':
-        X_train, y_train = X_train1, y_train1
-        X_test, y_test = X_test1, y_test1
-    elif dataset == 'sharp':
-        X_train, y_train = X_train2, y_train2
-        X_test, y_test = X_test2, y_test2
-    else:
-        raise
-
-    # standardization
+def standardize_data(X_train, X_test):
     X_mean = X_train.mean(0)
     X_std = X_train.std(0)
-    #print(X_mean, X_std)
-    Z_train = (X_train - X_mean) / X_std
-    Z_test = (X_test - X_mean) / X_std
+    X_train = (X_train - X_mean) / X_std
+    X_test = (X_test - X_mean) / X_std
+    return X_train, X_test
+
+
+def rus(X, y, groups, sizes=None, seed=None):
+    np.random.seed(seed)
+
+    neg = np.where(~y)[0]
+    pos = np.where(y)[0]
+    sizes = sizes or {0: len(pos), 1: len(pos)}
+    idx = np.concatenate((
+        np.random.choice(neg, size=sizes[0], replace=False),
+        np.random.choice(pos, size=sizes[1], replace=False),
+    ))
+    idx = np.sort(idx)
+    X, y, groups = X[idx], y[idx], groups[idx]
+    return X, y, groups
+
+
+def get_dataset(database, dataset, balanced=False, seed=None):
+    if dataset == 'combined':
+        X_smarp, y_smarp, g_smarp = load_data(database, 'smarp')
+        X_sharp, y_sharp, g_sharp = load_data(database, 'sharp')
+        X_sharp_train, X_sharp_test, y_sharp_train, y_sharp_test, g_sharp_train, g_sharp_test, \
+            = group_split_data(X_sharp, y_sharp, g_sharp, seed=seed)
+
+        X_train = np.concatenate((X_smarp, X_sharp_train))
+        X_test  = X_sharp_test
+        y_train = np.concatenate((y_smarp, y_sharp_train))
+        y_test  = y_sharp_test
+        g_train = np.concatenate((g_smarp, g_sharp_train))
+        g_test  = g_sharp_test
+    else:
+        X, y, groups = load_data(database, dataset)
+        X_train, X_test, y_train, y_test, g_train, g_test = group_split_data(X, y, groups, seed=seed)
+
+    X_train, X_test = standardize_data(X_train, X_test)
+
+    if balanced:
+        X_train, y_train, g_train = rus(X_train, y_train, g_train, seed=seed)
+        X_test, y_test, g_test = rus(X_test, y_test, g_test, seed=seed)
 
     if cfg['smoke']:
-        N = 1000
-        Z_train = Z_train[:N]
-        y_train = y_train[:N]
-        Z_test = Z_test[:N]
-        y_test = y_test[:N]
+        X_train, y_train, g_train = rus(X_train, y_train, g_train, sizes={0: 50, 1:50})
+        X_test, y_test, g_test = rus(X_test, y_test, g_test, sizes={0: 50, 1:50})
 
-    return Z_train, Z_test, y_train, y_test
+    return X_train, X_test, y_train, y_test, g_train, g_test
 
 
 def evaluate(X_test, y_test, model, save_dir='outputs'):
@@ -159,7 +182,8 @@ def evaluate(X_test, y_test, model, save_dir='outputs'):
     return scores
 
 
-def tune(X_train, y_train, Model, param_space, method='grid', save_dir='outputs'):
+def tune(X_train, y_train, groups_train,
+         Model, param_space, method='grid', save_dir='outputs'):
     #scorer = make_scorer(hss2)
     scorer = make_scorer(roc_auc_score, needs_threshold=True)
 
@@ -179,10 +203,10 @@ def tune(X_train, y_train, Model, param_space, method='grid', save_dir='outputs'
                               pipe_space,
                               scoring=scorer,
                               n_jobs=1,
-                              cv=5,
+                              cv=GroupKFold(cfg['bayes']['n_splits']),
                               refit=True, # default True
                               verbose=1)
-        search.fit(X_train, y_train)
+        search.fit(X_train, y_train, groups_train)
     elif method == 'bayes':
         search = BayesSearchCV(pipe,
                                pipe_space,
@@ -191,10 +215,10 @@ def tune(X_train, y_train, Model, param_space, method='grid', save_dir='outputs'
                                n_jobs=cfg['bayes']['n_jobs'], # at most n_points * cv jobs
                                n_points=cfg['bayes']['n_points'], # number of points to run in parallel
                                #pre_dispatch default to'2*n_jobs'. Can't be None. See joblib
-                               cv=cfg['bayes']['cv'], # if integer, StratifiedKFold is used by default
+                               cv=GroupKFold(cfg['bayes']['n_splits']), # if integer, StratifiedKFold is used by default
                                refit=True, # default True
                                verbose=0)
-        search.fit(X_train, y_train)
+        search.fit(X_train, y_train, groups_train)
         # Partial Dependence plots of the (surrogate) objective function
         # Not working for smoke test
         #_ = plot_objective(search.optimizer_results_[0],  # index out of range for QDA? If search space is empty, then the optimizer_results_ has length 1, but in plot_objective, optimizer_results_.models[-1] is called but models is an empty list. This should happen for all n_jobs though. Why didn't I come across it?
@@ -239,6 +263,10 @@ def tune(X_train, y_train, Model, param_space, method='grid', save_dir='outputs'
 
 
 def sklearn_main(database_dir):
+    """
+    We sweep both dataset and model in this function because that's the key comparisons
+    made by the paper. Databases, on the other hand, is iterated outside this function.
+    """
     Models = [
         #KNeighborsClassifier,
         #QuadraticDiscriminantAnalysis,
@@ -338,43 +366,48 @@ def sklearn_main(database_dir):
 
     results = []
     for dataset in ['smarp', 'sharp', 'combined']:
-        X_train, X_test, y_train, y_test = load_dataset(database_dir, dataset)
-        for Model in Models:
-            t_start = time.time()
-            param_space = distributions[Model.__name__]
+        for balanced in [True, False]:
+            dataset_blc = dataset + '_' + ('balanced' if balanced else 'raw')
+            X_train, X_test, y_train, y_test, groups_train, _ = get_dataset(
+                database_dir, dataset, balanced=balanced, seed=0)
+            for Model in Models:
+                t_start = time.time()
+                param_space = distributions[Model.__name__]
 
-            run_name = '_'.join([database_dir.name, dataset, Model.__name__])
-            run_dir = Path(cfg['output_dir']) / run_name
-            run_dir.mkdir(parents=True, exist_ok=True)
-            with mlflow.start_run(run_name=run_name, nested=True) as run:
+                run_name = '_'.join([database_dir.name, dataset_blc, Model.__name__])
+                run_dir = Path(cfg['output_dir']) / run_name
+                run_dir.mkdir(parents=True, exist_ok=True)
+                with mlflow.start_run(run_name=run_name, nested=True) as run:
 
-                best_model, df = tune(X_train, y_train, Model, param_space, method='bayes', save_dir=run_dir)
-                # Alternatively, param_space = grids[Model.__name__] and use 'grid' method
-                print(f'\nCV results of {Model.__name__} on {database_dir} {dataset}:')
-                print(df.to_markdown(tablefmt='grid'))
+                    best_model, df = tune(X_train, y_train, groups_train,
+                                          Model, param_space, method='bayes',
+                                          save_dir=run_dir)
+                    # Alternatively, param_space = grids[Model.__name__] and use 'grid' method
+                    print(f'\nCV results of {Model.__name__} on {database_dir} {dataset_blc}:')
+                    print(df.to_markdown(tablefmt='grid'))
 
-                scores = evaluate(X_test, y_test, best_model, save_dir=run_dir)
+                    scores = evaluate(X_test, y_test, best_model, save_dir=run_dir)
 
-                #mlflow.log_param('sampling_strategy', best_model.best_params_['rus__sampling_strategy'])
-                mlflow.log_params({k.replace('model__', ''): v for k, v in
-                    best_model.best_params_.items() if k.startswith('model__')})
-                mlflow.set_tag('database_name', database_dir.name)
-                mlflow.set_tag('dataset_name', dataset)
-                mlflow.set_tag('estimator_name', Model.__name__)
-                mlflow.log_metrics(scores)
-                #mlflow.sklearn.log_model(best_model, 'mlflow_model')
+                    #mlflow.log_param('sampling_strategy', best_model.best_params_['rus__sampling_strategy'])
+                    mlflow.log_params({k.replace('model__', ''): v for k, v in
+                        best_model.best_params_.items() if k.startswith('model__')})
+                    mlflow.set_tag('database_name', database_dir.name)
+                    mlflow.set_tag('dataset_name', dataset_blc)
+                    mlflow.set_tag('estimator_name', Model.__name__)
+                    mlflow.log_metrics(scores)
+                    #mlflow.sklearn.log_model(best_model, 'mlflow_model')
 
-            r = {
-                'database': database_dir.name,
-                'dataset': dataset,
-                'model': Model.__name__,
-                'time': time.time() - t_start,
-            }
-            r.update(scores)
-            r.update({
-                'params': dict(best_model.best_params_),
-            })
-            results.append(r)
+                r = {
+                    'database': database_dir.name,
+                    'dataset': dataset_blc,
+                    'model': Model.__name__,
+                    'time': time.time() - t_start,
+                }
+                r.update(scores)
+                r.update({
+                    'params': dict(best_model.best_params_),
+                })
+                results.append(r)
 
     results_df = pd.DataFrame(results)
     save_path = Path(cfg['output_dir']) / f'{database_dir.name}_results.md'
@@ -383,22 +416,29 @@ def sklearn_main(database_dir):
     print(results_df.to_markdown(tablefmt='grid'))
 
 
+def test_seed():
+    np.random.seed(0)
+    a = np.random.randint(0, 65536, 10)
+    assert np.all(a == [2732, 43567, 42613, 52416, 45891, 21243, 30403, 32103, 41993, 57043])
+    np.random.seed(None)
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('-d', '--data_root', default='datasets')
     parser.add_argument('-s', '--smoke', action='store_true')
-    parser.add_argument('-e', '--experiment_name', default='experiment')
-    parser.add_argument('-r', '--run_name', default='beta')
+    parser.add_argument('-e', '--experiment_name', default='sklearn')
+    parser.add_argument('-r', '--run_name', default='gamma')
     parser.add_argument('-o', '--output_dir', default='outputs')
     args = parser.parse_args()
 
     cfg = {
         'features': ['AREA', 'USFLUX', 'MEANGBZ', 'R_VALUE'],
         'bayes': {
-            'n_iter': 20,
+            'n_iter': 10, # light computation until the final stage
             'n_jobs': 20,
             'n_points': 4,
-            'cv': 5,
+            'n_splits': 5,
         },
     }
     cfg.update(vars(args))
@@ -410,17 +450,19 @@ if __name__ == '__main__':
                 'n_iter': 6,
                 'n_jobs': 2,
                 'n_points': 1,
-                'cv': 2,
+                'n_splits': 2,
             },
         })
+
+    test_seed()
 
     t_start = time.time()
     mlflow.set_experiment(cfg['experiment_name'])
     with mlflow.start_run(run_name=cfg['run_name']) as run:
         databases = [p for p in (Path(cfg['data_root']) / 'preprocessed').iterdir() if p.is_dir()]
         # databases = [Path(cfg['data_root']) / 'preprocessed' / d for d in [
-        #     'MX_Q_12hr_balanced',
-        #     'MX_Q_6hr_balanced',
+        #     'M_Q_24hr',
+        #     #'MX_Q_6hr',
         # ]]
         logging.info(databases)
         for database in databases:
