@@ -370,6 +370,13 @@ def sklearn_main(database_dir):
             dataset_blc = dataset + '_' + ('balanced' if balanced else 'raw')
             X_train, X_test, y_train, y_test, groups_train, _ = get_dataset(
                 database_dir, dataset, balanced=balanced, seed=0)
+            # # Visualize processed train and test splits
+            # from eda import plot_selected_samples
+            # title = database_dir.name + ' ' + dataset_blc
+            # fig = plot_selected_samples(X_train, X_test, y_train, y_test, cfg['features'],
+            #                             title=title)
+            # fig.show()
+            # continue
             for Model in Models:
                 t_start = time.time()
                 param_space = distributions[Model.__name__]

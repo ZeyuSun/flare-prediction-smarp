@@ -52,6 +52,51 @@ def plot_all_samples(dfs, names, dataset):
     return fig
 
 
+def plot_selected_samples(X_train, X_test, y_train, y_test, features, title=None):
+    df_train = pd.DataFrame(X_train, columns=features)
+    df_train = df_train.assign(label=y_train)
+    df_test = pd.DataFrame(X_test, columns=features)
+    df_test = df_test.assign(label=y_test)
+    dfs = [df_train, df_test]
+    names = ['train', 'test']
+    KEYWORDS = features
+
+    from plotly.subplots import make_subplots
+    import plotly.graph_objects as go
+    import plotly.express as px
+
+    fig = make_subplots(rows=len(KEYWORDS), cols=len(names),
+                        #shared_xaxes='all',
+                        shared_yaxes='rows',
+                        column_titles=names,
+                        row_titles=KEYWORDS,
+                        vertical_spacing=0.02)
+    colors = lambda labels: [px.colors.qualitative.Plotly[i] for i in labels.astype(int)]
+
+    def add_keyword(fig, keyword, row, col):
+        fig.add_trace(go.Scattergl(y=df[keyword],
+                                   # customdata=df['arpnum'].to_numpy(),
+                                   # hovertemplate=("<b>%{y} </b><br><br>" +
+                                   #                "time: %{x}<br>" +
+                                   #                f"{prefix} " + "%{customdata}<br>"),
+                                   mode='markers',
+                                   marker=dict(color=colors(df.label),
+                                               opacity=0.5)),
+                      row=row, col=col)
+        return fig
+
+    for i, keyword in enumerate(KEYWORDS):
+        for j, df in enumerate(dfs):
+            fig = add_keyword(fig, keyword, i+1, j+1)
+
+    fig.update_xaxes(title_text="dataframe index", row=len(KEYWORDS))
+
+    if title:
+        fig.update_layout(title_text=title)
+
+    return fig
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--processed_data_dir', default='datasets/preprocessed')
