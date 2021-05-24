@@ -129,6 +129,7 @@ def select_per_arp(dataset, arpnum,
 
     # 1st scan: read images and mark if there is nan
     df.loc[:, 'bad_img'] = None
+    # bad image: file missing, nan pixels, or inconsistent sizes.
     shapes = []
     for t_rec in df.index:
         image_file = get_image_filepath(dataset, arpnum, t_rec)
@@ -153,15 +154,24 @@ def select_per_arp(dataset, arpnum,
         t_steps = pd.date_range(t_start, t_end, freq='96min').strftime(T_REC_FORMAT)
         df_new = df.reindex(index=t_steps) # conformed df
 
-        if (df_new[KEYWORDS].isna().sum(axis=0) > 2).any():
-            # Allow for at most 2 missing entries for each feature column
-            counter['nan_val'] += 1
+        # missing records introduced by reindex are considered to have bad images
+        df_new.loc[df_new['bad_img'].isna()] = True
+
+        # (1) Drop the sample with too many nan/missing keywords:
+        #   Allow for <=2 missing entries in all but last row for each feature column
+        if ((df_new[KEYWORDS].isna().sum(axis=0) > 2).any() or
+            df_new[KEYWORDS].iloc[-1, :].isna().any()):
+            counter['nan_key'] += 1
             continue
 
-        if df_new[KEYWORDS].iloc[-1,:].isna().any():
-            # The last record is used in snapshot datasets so it can't be nan
-            counter['nan_val_last'] += 1
+        # (2) Drop the sample with too many nan/missing images:
+        #   Allow for <=2 nan/missing images in all but last t_rec
+        if (df_new['bad_img'].sum() > 2 or
+            df_new['bad_img'].iloc[-1]):
+            counter['bad_img'] += 1
             continue
+
+        bad_img_idx = (np.where(df_new['bad_img'])[0] - 16)  # neg idx of bad images
 
         flares_future = goes_ar.loc[(goes_ar['start_time'] >= t_end.strftime(GOES_TIME_FORMAT)) &
                                     (goes_ar['start_time'] <= t_future.strftime(GOES_TIME_FORMAT)),
@@ -171,17 +181,10 @@ def select_per_arp(dataset, arpnum,
                                       'goes_class'].tolist()
         flare_index = get_flare_index(flares_observed)
 
+        # (3) Drop the negative sample with large observed flares
         label = get_label(flares_observed, flares_future, criterion)
         if label is None:
             counter['obs_pos'] += 1
-            continue
-
-        if df_new['bad_img'].sum() >= 1:
-            counter['bad_img'] += 1
-            continue
-
-        if df_new['bad_img'].iloc[-1]:
-            counter['bad_img_last'] += 1
             continue
 
         sample = {
@@ -191,6 +194,7 @@ def select_per_arp(dataset, arpnum,
             't_end': t_end,
             'label': label,
             'flares': '|'.join(flares_future),
+            'bad_img_idx': bad_img_idx,
             'FLARE_INDEX': flare_index,
         }
         sample.update({k: df_new[k].iloc[-1] for k in KEYWORDS})
