@@ -9,8 +9,9 @@ from torch.utils.data import Dataset, DataLoader
 from torchvision.transforms import Compose
 import pytorch_lightning as pl
 
-from arnet.utils import query, query_parameters, read_header
+from arnet.fusion import get_datasets
 from arnet.transforms import get_transform
+from arnet.utils import query, query_parameters, read_header
 from arnet.constants import CONSTANTS
 
 
@@ -22,36 +23,6 @@ SERIES = {
     'HARP': 'hmi.sharp_cea_720s',
     'TARP': 'su_mbobra.smarp_cea_96m',
 }
-
-
-def group_split_data(df, seed=None):
-    from sklearn.model_selection import GroupShuffleSplit
-    splitter = GroupShuffleSplit(n_splits=1, test_size=0.2, random_state=seed)
-    train_idx, test_idx = next(splitter.split(df, groups=df['arpnum']))
-    return df.iloc[train_idx], df.iloc[test_idx]
-
-
-def rus(df, sizes=None, seed=False):
-    """Random Undersampling
-
-    Args:
-        seed: default is False, do not reset seed. Pass int/None to reset a
-            seed particularly/randomly.
-    """
-    import numpy as np
-    if seed is None or isinstance(seed, int):
-        np.random.seed(seed)
-
-    neg = np.where(~df['label'])[0]
-    pos = np.where(df['label'])[0]
-    sizes = sizes or {0: len(pos), 1:len(pos)}
-    idx = np.concatenate((
-        np.random.choice(neg, size=sizes[0], replace=False),
-        np.random.choice(pos, size=sizes[1], replace=False),
-    ))
-    idx = np.sort(idx)
-    df = df.iloc[idx].reset_index(drop=True)
-    return df
 
 
 def imputed_indices(invalid, length, method='bfill'):
@@ -90,9 +61,6 @@ class ActiveRegionDataset(Dataset):
     """
     def __init__(self, df_sample, features=None, num_frames=16, transform=None):
         self.df_sample = df_sample
-        self.df_sample['flares'].fillna('', inplace=True)
-        self.df_sample.loc[:, 'bad_img_idx'] = df_sample['bad_img_idx'].apply(
-            lambda s: [int(x) for x in s.strip('[]').split()])
 
         features = features or ['MAGNETOGRAM']
         if 'MAGNETOGRAM' in features and len(features) > 1:
@@ -179,7 +147,6 @@ class ActiveRegionDataModule(pl.LightningDataModule):
     def __init__(self, cfg):
         super().__init__()
         self.cfg = cfg
-        self.seed = self.cfg.DATA.SEED
         self._construct_transforms()
         self._construct_datasets(balanced=cfg.DATA.BALANCED)
         self.testmode = 'test'
@@ -190,32 +157,20 @@ class ActiveRegionDataModule(pl.LightningDataModule):
         self.transform = Compose(transforms)
 
     def _construct_datasets(self, balanced=True):
-        database = self.cfg.DATA.DATABASE
-        dataset = self.cfg.DATA.DATASET
-        if dataset == 'combined':
-            df_smarp = pd.read_csv(Path(database) / 'smarp.csv')
-            df_sharp = pd.read_csv(Path(database) / 'sharp.csv')
-            df_sharp_train, df_sharp_test = group_split_data(df_sharp, seed=self.seed)
-
-            df_train = pd.concat((df_smarp, df_sharp_train)).reset_index(drop=True)
-            df_train, df_val = group_split_data(df_train, seed=self.seed)
-            df_test = df_sharp_test
+        if self.cfg.DATA.BALANCED:
+            sizes = 'balanced'
         else:
-            df = pd.read_csv(Path(database) / (dataset+'.csv'))
-            df_train, df_test = group_split_data(df, seed=self.seed)
-            df_train, df_val = group_split_data(df_train, seed=self.seed)
+            sizes = None
 
-        if balanced:
-            df_train = rus(df_train, seed=self.seed)
-            df_val = rus(df_val, seed=self.seed)
-            df_test = rus(df_test, seed=self.seed)
+        self.df_train, self.df_val, self.df_test = get_datasets(
+            self.cfg.DATA.DATABASE,
+            self.cfg.DATA.DATASET,
+            self.cfg.DATA.AUXDATA,
+            sizes=sizes,
+            validation=True,
+            seed=self.cfg.DATA.SEED)
 
-        df_train = df_train.sample(frac=1, random_state=self.seed)
-
-        self.df_train = df_train
-        self.df_val = df_val
-        self.df_test = df_test
-        self.df_vis = df_test.iloc[:4] #sharp_train.loc[sharp_train['arpnum'] == 377].iloc[0:8:2]
+        self.df_vis = self.df_test.iloc[:4] #sharp_train.loc[sharp_train['arpnum'] == 377].iloc[0:8:2]
 
     def set_class_weight(self, cfg):
         p = self.df_train['label'].mean()

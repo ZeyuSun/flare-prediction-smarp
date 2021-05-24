@@ -29,36 +29,7 @@ from xgboost import XGBClassifier
 
 from metrics import tss, hss2, roc_auc_score, get_scores_from_cm, optimal_tss, draw_ssp
 from utils import get_output
-
-
-def fuse_sharp_to_smarp(df):
-    d = np.load(Path(cfg['data_root']) / 'auxiliary' / 'sharp2smarp.npy',
-                allow_pickle=True).item()
-    for k, v in d.items():
-        df[k] = df[k] * v['coef'] + v['intercept']
-    return df
-
-
-def load_data(database_dir, dataset):
-    df = pd.read_csv(database_dir / f'{dataset}.csv')
-    df['flares'].fillna('', inplace=True)
-    assert df.isnull().any(axis=None) == False
-
-    if dataset == 'sharp':
-        df = fuse_sharp_to_smarp(df)
-
-    X = df[cfg['features']].to_numpy()
-    y = df['label'].to_numpy()
-    groups = (df['prefix'] + df['arpnum'].apply(str)).to_numpy()
-    return X, y, groups
-
-
-def group_split_data(X, y, groups, seed=None):
-    splitter = GroupShuffleSplit(n_splits=1, test_size=0.2, random_state=seed)
-    train_idx, test_idx = next(splitter.split(X, y, groups))
-    return X[train_idx], X[test_idx], \
-           y[train_idx], y[test_idx], \
-           groups[train_idx], groups[test_idx]
+from arnet.fusion import get_datasets
 
 
 def standardize_data(X_train, X_test):
@@ -69,47 +40,28 @@ def standardize_data(X_train, X_test):
     return X_train, X_test
 
 
-def rus(X, y, groups, sizes=None, seed=None):
-    np.random.seed(seed)
-
-    neg = np.where(~y)[0]
-    pos = np.where(y)[0]
-    sizes = sizes or {0: len(pos), 1: len(pos)}
-    idx = np.concatenate((
-        np.random.choice(neg, size=sizes[0], replace=False),
-        np.random.choice(pos, size=sizes[1], replace=False),
-    ))
-    idx = np.sort(idx)
-    X, y, groups = X[idx], y[idx], groups[idx]
+def get_dataset_from_df(df):
+    X = df[cfg['features']].to_numpy()
+    y = df['label'].to_numpy()
+    groups = (df['prefix'] + df['arpnum'].apply(str)).to_numpy()
     return X, y, groups
 
 
-def get_dataset(database, dataset, balanced=False, seed=None):
-    if dataset == 'combined':
-        X_smarp, y_smarp, g_smarp = load_data(database, 'smarp')
-        X_sharp, y_sharp, g_sharp = load_data(database, 'sharp')
-        X_sharp_train, X_sharp_test, y_sharp_train, y_sharp_test, g_sharp_train, g_sharp_test, \
-            = group_split_data(X_sharp, y_sharp, g_sharp, seed=seed)
-
-        X_train = np.concatenate((X_smarp, X_sharp_train))
-        X_test  = X_sharp_test
-        y_train = np.concatenate((y_smarp, y_sharp_train))
-        y_test  = y_sharp_test
-        g_train = np.concatenate((g_smarp, g_sharp_train))
-        g_test  = g_sharp_test
+def get_dataset_numpy(database, dataset, auxdata, balanced=False, seed=None):
+    if cfg['smoke']:
+        sizes = {0: 50, 1: 50}
+    elif balanced == True:
+        sizes = 'balanced'
     else:
-        X, y, groups = load_data(database, dataset)
-        X_train, X_test, y_train, y_test, g_train, g_test = group_split_data(X, y, groups, seed=seed)
+        sizes = None
+
+    df_train, df_test = get_datasets(database, dataset, auxdata,
+                                     sizes=sizes, validation=False, shuffle=True, seed=seed)
+    df_train.to_csv('train0.csv')
+    X_train, y_train, g_train = get_dataset_from_df(df_train)
+    X_test, y_test, g_test = get_dataset_from_df(df_test)
 
     X_train, X_test = standardize_data(X_train, X_test)
-
-    if balanced:
-        X_train, y_train, g_train = rus(X_train, y_train, g_train, seed=seed)
-        X_test, y_test, g_test = rus(X_test, y_test, g_test, seed=seed)
-
-    if cfg['smoke']:
-        X_train, y_train, g_train = rus(X_train, y_train, g_train, sizes={0: 50, 1:50})
-        X_test, y_test, g_test = rus(X_test, y_test, g_test, sizes={0: 50, 1:50})
 
     return X_train, X_test, y_train, y_test, g_train, g_test
 
@@ -368,8 +320,8 @@ def sklearn_main(database_dir):
     for dataset in ['smarp', 'sharp', 'combined']:
         for balanced in [True, False]:
             dataset_blc = dataset + '_' + ('balanced' if balanced else 'raw')
-            X_train, X_test, y_train, y_test, groups_train, _ = get_dataset(
-                database_dir, dataset, balanced=balanced, seed=0)
+            X_train, X_test, y_train, y_test, groups_train, _ = get_dataset_numpy(
+                database_dir, dataset, cfg['auxdata'], balanced=balanced, seed=cfg['seed'])
             # # Visualize processed train and test splits
             # from eda import plot_selected_samples
             # title = database_dir.name + ' ' + dataset_blc
@@ -433,10 +385,12 @@ def test_seed():
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('-d', '--data_root', default='datasets')
+    parser.add_argument('-a', '--auxdata', default='datasets/auxiliary/sharp2smarp.npy')
     parser.add_argument('-s', '--smoke', action='store_true')
     parser.add_argument('-e', '--experiment_name', default='sklearn')
     parser.add_argument('-r', '--run_name', default='gamma')
     parser.add_argument('-o', '--output_dir', default='outputs')
+    parser.add_argument('--seed', default=0)
     args = parser.parse_args()
 
     cfg = {
