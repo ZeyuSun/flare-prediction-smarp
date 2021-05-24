@@ -155,12 +155,13 @@ def select_per_arp(dataset, arpnum,
         df_new = df.reindex(index=t_steps) # conformed df
 
         # missing records introduced by reindex are considered to have bad images
-        df_new.loc[df_new['bad_img'].isna()] = True
+        df_new.loc[df_new['bad_img'].isna(), 'bad_img'] = True
 
         # (1) Drop the sample with too many nan/missing keywords:
         #   Allow for <=2 missing entries in all but last row for each feature column
-        if ((df_new[KEYWORDS].isna().sum(axis=0) > 2).any() or
-            df_new[KEYWORDS].iloc[-1, :].isna().any()):
+        nan_arr = np.isnan(df_new[KEYWORDS].values)  # ~3x faster than df
+        if ((nan_arr.sum(axis=0) > 2).any() or
+            nan_arr[-1, :].any()):
             counter['nan_key'] += 1
             continue
 
@@ -205,13 +206,14 @@ def select_per_arp(dataset, arpnum,
 
 
 def select(dataset, arpnums, val_time, criterion):
-    # Non-parallel
-    #samples = map(partial(select_per_arp, dataset), arpnums)
+    closure = partial(select_per_arp, dataset,
+                      val_time=val_time, criterion=criterion)
+
+    # # Non-parallel
+    # samples = map(closure, arpnums)
 
     # Parallel
     with Pool(24) as pool:
-        closure = partial(select_per_arp, dataset,
-                          val_time=val_time, criterion=criterion)
         samples = pool.map(closure, arpnums)
 
     samples = [s for s in samples if s is not None]
