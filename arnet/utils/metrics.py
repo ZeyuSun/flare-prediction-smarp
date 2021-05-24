@@ -94,7 +94,7 @@ def get_scores_from_cm(cm):
     return scores
 
 
-def get_metrics_probabilistic(y_true, y_prob, criterion='hss2'):
+def get_metrics_probabilistic(y_true, y_prob, criterion='tss'):
     """
     =====================================================
         \ Pred  0               1               |

@@ -1,4 +1,5 @@
 DATA:
+  SEED: 0
   FEATURES: [
     'AREA', 'USFLUX', 'MEANGBZ', 'R_VALUE',
   ]

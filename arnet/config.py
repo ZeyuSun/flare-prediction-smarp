@@ -8,8 +8,10 @@ from arnet.utils import CfgNode as CN
 cfg = CN()
 
 cfg.DATA = CN()
-cfg.DATA.DATABASE = 'datasets/preprocessed/MX_Q_24hr_balanced'
+cfg.DATA.DATABASE = 'datasets/preprocessed/M_Q_24hr'
 cfg.DATA.DATASET = 'sharp'
+cfg.DATA.BALANCED = True
+cfg.DATA.SEED = None
 cfg.DATA.FEATURES = [
     #'MAGNETOGRAM',
     'AREA', 'USFLUX', 'MEANGBZ', 'R_VALUE',
@@ -64,4 +66,4 @@ cfg.TRAINER.profiler = None
 #TODO: a more convenient way to add the signature of pl.Trainer()
 
 cfg.MISC = CN()
-cfg.MISC.OUTPUT_DIR = "outputs_cnn"
+cfg.MISC.OUTPUT_DIR = "outputs"

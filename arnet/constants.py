@@ -6,13 +6,14 @@ import pandas as pd
 
 
 FEATURES = ['AREA', 'USFLUX', 'MEANGBZ', 'R_VALUE', 'FLARE_INDEX']
-PROCESSED_DATA_DIR = '/home/zeyusun/work/flare-prediction-smarp/datasets/preprocessed/MX_Q_24hr_balanced'
+#TODO: constants calculated on training set
+PROCESSED_DATA_DIR = '/home/zeyusun/work/flare-prediction-smarp/datasets/preprocessed/M_Q_24hr'
 
 @lru_cache
 def get_constants():
     CONSTANTS = {}
     for dataset in ['sharp', 'smarp']:
-        filepath = os.path.join(PROCESSED_DATA_DIR, f'{dataset}_train.csv')
+        filepath = os.path.join(PROCESSED_DATA_DIR, f'{dataset}.csv')
         df = pd.read_csv(filepath)
 
         CONSTANTS[dataset.upper() + '_MEAN'] = df[FEATURES].mean().to_dict()

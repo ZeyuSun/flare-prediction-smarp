@@ -12,7 +12,7 @@ r_header = redis.Redis(db=3)
 r_image = redis.Redis(db=13)
 
 
-def read_header(dataset, arpnum):
+def read_header(dataset, arpnum, index_col=None):
     """
     Returns:
         header (dataframe): The keywords dataframe. Returns None if no sharp_los found.
@@ -31,9 +31,15 @@ def read_header(dataset, arpnum):
         if not header.index.equals(header_los.index):
             logging.warning('Header t_recs mismatch: header_los and header of HARP %d' % arpnum)
         header.update(header_los[KEYWORDS_LOS])
-        header.reset_index(inplace=True)
+        if index_col is None:
+            header.reset_index(inplace=True)
+        elif index_col == 'T_REC':
+            pass
+        else:
+            raise
     elif dataset == 'smarp':
-        header = pd.read_csv(os.path.join(DATA_DIR, f'SMARP/header/TARP{arpnum:06d}_ATTRS.csv'))
+        header = pd.read_csv(os.path.join(DATA_DIR, f'SMARP/header/TARP{arpnum:06d}_ATTRS.csv'),
+                             index_col=index_col)
     else:
         raise
     return header
@@ -97,7 +103,16 @@ def query(filepaths, redis=True):
     else:
         data_arrays = [fits_open(k) for k in filepaths]
 
-    data = np.stack(data_arrays)
+    try:
+        data = np.stack(data_arrays)
+    except:
+        hs, ws = zip(*[arr.shape for arr in data_arrays])
+        hr, wr = max(hs) - min(hs), max(ws) - min(ws)
+        assert hr < 5, '%d, %d'% (max(hs), min(hs))
+        assert wr < 5, '%d, %d'% (max(ws), min(ws))
+        ht, wt = min(hs), min(ws)
+        data_arrays = [arr[:ht,:wt] for arr in data_arrays]
+        data = np.stack(data_arrays)
     if single_file:
         data = data[0]
     return data
@@ -124,7 +139,7 @@ def query_parameters(prefix, arpnum, t_recs, keywords, redis=True):
         # if any([s is None for s in series]):
         #     print(series)
         records = [json.loads(b) if b else {} for b in buff]
-        df = pd.DataFrame(records, index=t_recs)  # Takes up 61% of the time
+        df = pd.DataFrame(records, index=t_recs)[keywords]  # Takes up 61% of the time
     else:
         raise
     return df

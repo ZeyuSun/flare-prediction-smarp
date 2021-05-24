@@ -42,7 +42,7 @@ def visualize(cfg, dm):
 
 def launch(config, modes, resume, opts):
     """Perform training, testing, and/or visualization"""
-    global cfg  # cfg is assigned in the function and hence treated as a local var by python
+    global cfg  # If not stated, cfg is seen as local due to in-function assignment.
     if config is not None:
         cfg.merge_from_file(config)
     cfg.merge_from_list(opts)
@@ -51,6 +51,11 @@ def launch(config, modes, resume, opts):
 
     logger = utils.setup_logger(cfg.MISC.OUTPUT_DIR)
     #logger.info(cfg)
+    logger.info("{} {} {}".format(
+        cfg.DATA.DATABASE,
+        config,
+        cfg.DATA.DATASET,
+    ))
 
     dm = ActiveRegionDataModule(cfg)
     cfg = dm.set_class_weight(cfg)
@@ -58,6 +63,7 @@ def launch(config, modes, resume, opts):
     if 'train' in modes:
         logger.info("======== TRAIN ========")
         cfg.LEARNER.CHECKPOINT = train(cfg, dm, resume)
+        mlflow.set_tag('checkpoint', cfg.LEARNER.CHECKPOINT)
 
     if 'test' in modes:
         logger.info("======== TEST ========")
@@ -114,8 +120,8 @@ def sweep():
     parser.add_argument('-d', '--data_root', default='datasets')
     parser.add_argument('-c', '--config_root', default='arnet/configs')
     parser.add_argument('-s', '--smoke', action='store_true')
-    parser.add_argument('-e', '--experiment_name', default='experiment_arnet')
-    #parser.add_argument('-r', '--run_name', default='arnet')
+    parser.add_argument('-e', '--experiment_name', default='arnet')
+    parser.add_argument('-r', '--run_name', default='gamma')
     parser.add_argument('opts', default=None, nargs=argparse.REMAINDER)
     args = parser.parse_args()
     if args.smoke:
@@ -130,19 +136,25 @@ def sweep():
 
     t_start = time.time()
     databases = [p for p in (Path(args.data_root) / 'preprocessed').iterdir() if p.is_dir()]
+    databases = [Path(args.data_root) / 'preprocessed' / f'M_Q_{t}hr' for t in [6,12,24]]
     configs = [c for c in Path(args.config_root).iterdir()]
     mlflow.set_experiment(args.experiment_name)
-    for database in databases:
-        for config in configs:
-            for dataset in ['sharp', 'smarp', 'combined']:
-                opts = [
-                    'DATA.DATABASE', database,
-                    'DATA.DATASET', dataset,
-                ]
-                run_name = '_'.join([database.name, config.stem, dataset])
-                print(run_name)
-                with mlflow.start_run(run_name=run_name):
-                    launch(config, 'train|test', False, args.opts + opts)
+    with mlflow.start_run(run_name=args.run_name):
+        for database in databases:
+            for config in configs:
+                for dataset in ['sharp', 'smarp', 'combined']:
+                    opts = [
+                        'DATA.DATABASE', database,
+                        'DATA.DATASET', dataset,
+                    ]
+                    run_name = '_'.join([database.name, config.stem, dataset])
+                    with mlflow.start_run(run_name=run_name, nested=True):
+                        tt = time.time()
+                        launch(config, 'train|test', False, args.opts + opts)
+                        mlflow.log_metric('time', time.time() - tt)
+                        mlflow.set_tag('database_name', database.name)
+                        mlflow.set_tag('estimator_name', config.stem)
+                        mlflow.set_tag('dataset_name', dataset)
 
     print('Run time: {} s'.format(time.time() - t_start))
 

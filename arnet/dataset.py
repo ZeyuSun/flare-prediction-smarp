@@ -22,12 +22,61 @@ SERIES = {
     'HARP': 'hmi.sharp_cea_720s',
     'TARP': 'su_mbobra.smarp_cea_96m',
 }
-HEADER_DIRS = {
-    'TARP': '/data2/SMARP/header/',
-    'HARP': '/data2/SHARP/header_los/',
-}
-HEADER_TIME_FMT = '%Y.%m.%d_%H:%M:%S_TAI' # 2006.05.21_14:24:00_TAI
-CADENCE = timedelta(minutes=96)
+
+
+def group_split_data(df, seed=None):
+    from sklearn.model_selection import GroupShuffleSplit
+    splitter = GroupShuffleSplit(n_splits=1, test_size=0.2, random_state=seed)
+    train_idx, test_idx = next(splitter.split(df, groups=df['arpnum']))
+    return df.iloc[train_idx], df.iloc[test_idx]
+
+
+def rus(df, sizes=None, seed=False):
+    """Random Undersampling
+
+    Args:
+        seed: default is False, do not reset seed. Pass int/None to reset a
+            seed particularly/randomly.
+    """
+    import numpy as np
+    if seed is None or isinstance(seed, int):
+        np.random.seed(seed)
+
+    neg = np.where(~df['label'])[0]
+    pos = np.where(df['label'])[0]
+    sizes = sizes or {0: len(pos), 1:len(pos)}
+    idx = np.concatenate((
+        np.random.choice(neg, size=sizes[0], replace=False),
+        np.random.choice(pos, size=sizes[1], replace=False),
+    ))
+    idx = np.sort(idx)
+    df = df.iloc[idx].reset_index(drop=True)
+    return df
+
+
+def imputed_indices(invalid, length, method='bfill'):
+    """Imputation indices assuming the last element is valid.
+
+    Args:
+        invalid: List of negative indices of invalid entries.
+        length: Length of the list to impute.
+        method: Imputation methods. Default 'bfill' implements backward-fill
+            (use next valid element to fill the gap).
+
+    Returns:
+        indices: indices that give an imputed array.
+
+    Example:
+        bad_map = [0, 1, 1, 0, 0, 1, 0]
+        invalid = [-2, -5, -6], length = 7
+        indices = [0, 3, 3, 3, 4, 6, 6]
+    """
+    assert method == 'bfill'
+    indices = list(range(length))
+    for i in range(-2, -length-1, -1):
+        if i in invalid:
+            indices[i] = indices[i+1]
+    return indices
 
 
 class ActiveRegionDataset(Dataset):
@@ -42,6 +91,8 @@ class ActiveRegionDataset(Dataset):
     def __init__(self, df_sample, features=None, num_frames=16, transform=None):
         self.df_sample = df_sample
         self.df_sample['flares'].fillna('', inplace=True)
+        self.df_sample.loc[:, 'bad_img_idx'] = df_sample['bad_img_idx'].apply(
+            lambda s: [int(x) for x in s.strip('[]').split()])
 
         features = features or ['MAGNETOGRAM']
         if 'MAGNETOGRAM' in features and len(features) > 1:
@@ -55,34 +106,32 @@ class ActiveRegionDataset(Dataset):
         return len(self.df_sample)
 
     def __getitem__(self, idx):
-        sample = self.df_sample.iloc[idx]
+        s = self.df_sample.iloc[idx]
 
         # data
         if 'MAGNETOGRAM' in self.features: # image
-            data = self.load_video(sample['prefix'], sample['arpnum'], sample['t_end'])
+            data = self.load_video(s['prefix'], s['arpnum'], s['t_end'], s['bad_img_idx'])
         else: # parameters
-            data = self.load_parameters(sample['prefix'], sample['arpnum'], sample['t_end'])
+            data = self.load_parameters(s['prefix'], s['arpnum'], s['t_end'])
 
         # label
-        label = int(sample['label'])
+        label = int(s['label'])
 
         # meta
-        t_end = datetime.strptime(sample['t_end'], '%Y-%m-%d %H:%M:%S').strftime('%Y%m%d%H%M%S')
-        largest_flare = max(sample['flares'].split('|')) #WARNING: X10+
-        meta = f'{sample["prefix"]}{sample["arpnum"]:06d}_{t_end}_H0_W0_{largest_flare}.npy'
+        t_end = datetime.strptime(s['t_end'], '%Y-%m-%d %H:%M:%S').strftime('%Y%m%d%H%M%S')
+        largest_flare = max(s['flares'].split('|')) #WARNING: X10+
+        meta = f'{s["prefix"]}{s["arpnum"]:06d}_{t_end}_H0_W0_{largest_flare}.npy'
         return data, label, meta
 
-    def load_video(self, prefix, arpnum, t_end):
+    def load_video(self, prefix, arpnum, t_end, bad_img_idx):
         t_end = drms.to_datetime(t_end)
         t_start = t_end - timedelta(minutes=96) * (self.num_frames - 1)
         t_steps = pd.date_range(t_start, t_end, freq='96min').strftime('%Y%m%d_%H%M%S_TAI')
-        filenames = (f"{SERIES[prefix]}.{arpnum}.{t}.magnetogram.fits"
-                     for t in t_steps)
-        _filepaths = [os.path.join(DATA_DIRS[prefix], f'{arpnum:06d}', filename)
-                     for filename in filenames]
-        # Assumes (1) last frame exists (2) missing at most one filepath
-        filepaths = [p if os.path.isfile(p) else _filepaths[i+1]
-                     for i, p in enumerate(_filepaths)]
+        filenames = [f"{SERIES[prefix]}.{arpnum}.{t}.magnetogram.fits"
+                     for t in t_steps]
+        indices = imputed_indices(bad_img_idx, len(filenames))
+        filepaths = [os.path.join(DATA_DIRS[prefix], f'{arpnum:06d}', filenames[k])
+                     for k in indices]
         video = query(filepaths)
         video = torch.from_numpy(video)
         video = torch.unsqueeze(video, 0) # C,T,H,W
@@ -130,8 +179,9 @@ class ActiveRegionDataModule(pl.LightningDataModule):
     def __init__(self, cfg):
         super().__init__()
         self.cfg = cfg
+        self.seed = self.cfg.DATA.SEED
         self._construct_transforms()
-        self._construct_datasets()
+        self._construct_datasets(balanced=cfg.DATA.BALANCED)
         self.testmode = 'test'
 
     def _construct_transforms(self):
@@ -139,28 +189,33 @@ class ActiveRegionDataModule(pl.LightningDataModule):
                       for name in self.cfg.DATA.TRANSFORMS]
         self.transform = Compose(transforms)
 
-    def _construct_datasets(self):
-        smarp_train = pd.read_csv(Path(self.cfg.DATA.DATABASE) / 'smarp_train.csv')
-        smarp_test  = pd.read_csv(Path(self.cfg.DATA.DATABASE) / 'smarp_test.csv')
-        sharp_train = pd.read_csv(Path(self.cfg.DATA.DATABASE) / 'sharp_train.csv')
-        sharp_test  = pd.read_csv(Path(self.cfg.DATA.DATABASE) / 'sharp_test.csv')
-        if self.cfg.DATA.DATASET == 'sharp':
-            self.df_train = sharp_train
-            self.df_val = sharp_test
-            self.df_test = sharp_test
-        elif self.cfg.DATA.DATASET == 'smarp':
-            self.df_train = smarp_train
-            self.df_val = smarp_test
-            self.df_test = smarp_test
-        elif self.cfg.DATA.DATASET == 'combined':
-            self.df_train = pd.concat((smarp_train, smarp_test, sharp_train)).reset_index(drop=True)
-            self.df_val = sharp_test
-            self.df_test = sharp_test
+    def _construct_datasets(self, balanced=True):
+        database = self.cfg.DATA.DATABASE
+        dataset = self.cfg.DATA.DATASET
+        if dataset == 'combined':
+            df_smarp = pd.read_csv(Path(database) / 'smarp.csv')
+            df_sharp = pd.read_csv(Path(database) / 'sharp.csv')
+            df_sharp_train, df_sharp_test = group_split_data(df_sharp, seed=self.seed)
+
+            df_train = pd.concat((df_smarp, df_sharp_train)).reset_index(drop=True)
+            df_train, df_val = group_split_data(df_train, seed=self.seed)
+            df_test = df_sharp_test
         else:
-            raise
-        self.df_train = self.df_train.sample(frac=1)
-        #self.df_vis = sharp_test.iloc[:4]
-        self.df_vis = sharp_train.loc[sharp_train['arpnum'] == 377].iloc[0:8:2]
+            df = pd.read_csv(Path(database) / (dataset+'.csv'))
+            df_train, df_test = group_split_data(df, seed=self.seed)
+            df_train, df_val = group_split_data(df_train, seed=self.seed)
+
+        if balanced:
+            df_train = rus(df_train, seed=self.seed)
+            df_val = rus(df_val, seed=self.seed)
+            df_test = rus(df_test, seed=self.seed)
+
+        df_train = df_train.sample(frac=1, random_state=self.seed)
+
+        self.df_train = df_train
+        self.df_val = df_val
+        self.df_test = df_test
+        self.df_vis = df_test.iloc[:4] #sharp_train.loc[sharp_train['arpnum'] == 377].iloc[0:8:2]
 
     def set_class_weight(self, cfg):
         p = self.df_train['label'].mean()
@@ -225,3 +280,12 @@ class ActiveRegionDataModule(pl.LightningDataModule):
         return loader
 
 
+if __name__ == '__main__':
+    df_sample = pd.read_csv('datasets/preprocessed/MX_Q_6hr/smarp_train.csv')
+    dataset = ActiveRegionDataset(df_sample, features=['MAGNETOGRAM'], num_frames=16, transform=None)
+    for idx, (sample, _, m) in enumerate(dataset):
+        if not sample.isnan().any():
+            continue
+        nanmap = sample.isnan().detach().cpu().numpy()
+        print(m)
+        print(nanmap)

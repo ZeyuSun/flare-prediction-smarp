@@ -62,6 +62,7 @@ class Learner(pl.LightningModule):
         #                                 dtype=torch.float32)#.to('cuda:0') #self.device)
         # self.loss_fn = losses.get_loss_fn(self.cfg.LEARNER.LOSS_TYPE, weight=self.loss_weight)
         self.tb = self.logger.experiment
+        mlflow.set_tag('logger_version', self.logger.version)
 
     def grad_norm(self, norm_type: Union[float, int, str]) -> Dict[str, float]:
         """Compute each parameter's gradient's norm and their overall norm.
