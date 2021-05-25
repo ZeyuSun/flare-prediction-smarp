@@ -135,8 +135,8 @@ def sweep():
     parser.add_argument('-d', '--data_root', default='datasets')
     parser.add_argument('-c', '--config_root', default='arnet/configs')
     parser.add_argument('-s', '--smoke', action='store_true')
-    parser.add_argument('-e', '--experiment_name', default='arnet')
-    parser.add_argument('-r', '--run_name', default='gamma')
+    parser.add_argument('-e', '--experiment_name', default='leaderboard1')
+    parser.add_argument('-r', '--run_name', default='arnet_balanced')
     parser.add_argument('opts', default=None, nargs=argparse.REMAINDER)
     args = parser.parse_args()
     if args.smoke:
@@ -156,7 +156,7 @@ def sweep():
     mlflow.set_experiment(args.experiment_name)
     with mlflow.start_run(run_name=args.run_name):
         for database in databases:
-            for balanced in [True, False]:
+            for balanced in [True]:
                 for config in configs:
                     for dataset in ['sharp', 'smarp', 'combined']:
                         opts = [

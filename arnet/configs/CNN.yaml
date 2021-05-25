@@ -14,10 +14,10 @@ DATA:
 LEARNER:
   CLASS_WEIGHT: 'balanced'
   #LEARNING_RATE: 1e-3
-
+  PATIENCE: 20
   MODEL:
     NAME: 'SimpleC3D'
     SETTINGS: 'cnn'
 
 TRAINER:
-  max_epochs: 15
+  max_epochs: 20
