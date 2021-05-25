@@ -32,6 +32,102 @@ from utils import get_output
 from arnet.fusion import get_datasets
 
 
+MODELS = [
+    #KNeighborsClassifier,
+    #QuadraticDiscriminantAnalysis,
+    SGDClassifier,
+    #SVC,
+    #DecisionTreeClassifier,
+    RandomForestClassifier,
+    #ExtraTreesClassifier,
+    #AdaBoostClassifier,
+    #GradientBoostingClassifier,
+    HistGradientBoostingClassifier,
+]
+GRIDS = {
+    'SGDClassifier': {
+        'loss': [
+            'hinge', # linear SVM
+            'log', # logistic regression
+        ],
+        'alpha': [1e-6, 1e-4, 1e-2],
+        'class_weight': 'balanced', # default to None (all classes are assumed to have weight one)
+    },
+    'QuadraticDiscriminantAnalysis': {
+        # priors=None, # By default, the class proportions are inferred from training data
+    },
+    'SVC': {
+        'C': [0.1, 1, 10],
+        'class_weight': [
+            {0: 1, 1: 1},
+            {0: 1, 1: 2},
+            {0: 1, 1: 10},
+        ],
+    },
+    'DecisionTreeClassifier': {
+        'max_depth': [1, 2, 4, 8], # default None
+        'min_samples_leaf': [1, 0.00001, 0.0001, 0.001, 0.01], # 1 and 1.0 are different. Default 1
+        'class_weight': 'balanced', # default None (all classes are assumed to have weight one)
+    },
+    'RandomForestClassifier': {
+        'n_estimators': [10, 100, 1000],
+        'max_depth': [None, 2, 4, 8],  # weak learners
+        #'min_samples_split': 2,
+        'class_weight': ['balanced', 'balanced_subsample'],
+    },
+    'ExtraTreesClassifier': {
+    },
+    'AdaBoostClassifier': {
+    },
+    'GradientBoostingClassifier': {
+    },
+    'HistGradientBoostingClassifier': {
+    },
+    #'XGBClassifier': {},
+}
+DISTRIBUTIONS = {
+    'SGDClassifier': {
+        'loss': [
+            #'hinge', # linear SVM
+            'log', # logistic regression
+        ],
+        'alpha': (1e-6, 1e-1, 'log-uniform'),
+        'class_weight': ['balanced'], # default to None (all classes are assumed to have weight one)
+    },
+    'QuadraticDiscriminantAnalysis': {
+        'reg_param': [0],  # BayesSearchCV require
+        # priors=None, # By default, the class proportions are inferred from training data
+    },
+    'DecisionTreeClassifier': {
+        'max_depth': [8, 16, 32, 64, None], # default None
+        #'min_samples_leaf': (0.000001, 0.01, 'log-uniform'),
+        # 1 and 1.0 are different. Default 1
+        'class_weight': ['balanced'], # default to None (all classes are assumed to have weight one)
+    },
+    'RandomForestClassifier': {
+        'n_estimators': [300], #[50, 100, 300], 300 better than 50 and 100
+        #'max_depth': [None, 1, 2, 4, 8], # RF doesn't use weak learner
+        'class_weight': ['balanced', 'balanced_subsample'], # default to None (all classes are assumed to have weight one)
+        'oob_score': [True],
+    },
+    'ExtraTreesClassifier': {
+        'n_estimators': [100, 300, 1000],
+    },
+    'AdaBoostClassifier': {
+        'n_estimators': [50],
+        'learning_rate': [1],
+    },
+    'GradientBoostingClassifier': {
+        'learning_rate': [0.1],
+    },
+    'HistGradientBoostingClassifier': {
+        'learning_rate': (0.0001, 0.1, 'log-uniform'),
+        'max_iter': [50, 100, 200, 400, 1000],
+        'max_depth': [None, 2, 4, 6],
+    },
+}
+
+
 def standardize_data(X_train, X_test):
     X_mean = X_train.mean(0)
     X_std = X_train.std(0)
@@ -214,166 +310,32 @@ def tune(X_train, y_train, groups_train,
     return search, df
 
 
-def sklearn_main(database_dir):
-    """
-    We sweep both dataset and model in this function because that's the key comparisons
-    made by the paper. Databases, on the other hand, is iterated outside this function.
-    """
-    Models = [
-        #KNeighborsClassifier,
-        #QuadraticDiscriminantAnalysis,
-        SGDClassifier,
-        #SVC,
-        #DecisionTreeClassifier,
-        RandomForestClassifier,
-        #ExtraTreesClassifier,
-        #AdaBoostClassifier,
-        #GradientBoostingClassifier,
-        HistGradientBoostingClassifier,
-    ]
+def launch(database, dataset, balanced, Model):
+    blcd ='balanced' if balanced else 'original'
 
-    grids = {
-        'SGDClassifier': {
-            'loss': [
-                'hinge', # linear SVM
-                'log', # logistic regression
-            ],
-            'alpha': [1e-6, 1e-4, 1e-2],
-            'class_weight': 'balanced', # default to None (all classes are assumed to have weight one)
-        },
-        'QuadraticDiscriminantAnalysis': {
-            # priors=None, # By default, the class proportions are inferred from training data
-        },
-        'SVC': {
-            'C': [0.1, 1, 10],
-            'class_weight': [
-                {0: 1, 1: 1},
-                {0: 1, 1: 2},
-                {0: 1, 1: 10},
-            ],
-        },
-        'DecisionTreeClassifier': {
-            'max_depth': [1, 2, 4, 8], # default None
-            'min_samples_leaf': [1, 0.00001, 0.0001, 0.001, 0.01], # 1 and 1.0 are different. Default 1
-            'class_weight': 'balanced', # default None (all classes are assumed to have weight one)
-        },
-        'RandomForestClassifier': {
-            'n_estimators': [10, 100, 1000],
-            'max_depth': [None, 2, 4, 8],  # weak learners
-            #'min_samples_split': 2,
-            'class_weight': ['balanced', 'balanced_subsample'],
-        },
-        'ExtraTreesClassifier': {
-        },
-        'AdaBoostClassifier': {
-        },
-        'GradientBoostingClassifier': {
-        },
-        'HistGradientBoostingClassifier': {
-        },
-        #'XGBClassifier': {},
-    }
 
-    distributions = {
-        'SGDClassifier': {
-            'loss': [
-                #'hinge', # linear SVM
-                'log', # logistic regression
-            ],
-            'alpha': (1e-6, 1e-1, 'log-uniform'),
-            'class_weight': ['balanced'], # default to None (all classes are assumed to have weight one)
-        },
-        'QuadraticDiscriminantAnalysis': {
-            'reg_param': [0],  # BayesSearchCV require
-            # priors=None, # By default, the class proportions are inferred from training data
-        },
-        'DecisionTreeClassifier': {
-            'max_depth': [8, 16, 32, 64, None], # default None
-            #'min_samples_leaf': (0.000001, 0.01, 'log-uniform'),
-            # 1 and 1.0 are different. Default 1
-            'class_weight': ['balanced'], # default to None (all classes are assumed to have weight one)
-        },
-        'RandomForestClassifier': {
-            'n_estimators': [300], #[50, 100, 300], 300 better than 50 and 100
-            #'max_depth': [None, 1, 2, 4, 8], # RF doesn't use weak learner
-            'class_weight': ['balanced', 'balanced_subsample'], # default to None (all classes are assumed to have weight one)
-            'oob_score': [True],
-        },
-        'ExtraTreesClassifier': {
-            'n_estimators': [100, 300, 1000],
-        },
-        'AdaBoostClassifier': {
-            'n_estimators': [50],
-            'learning_rate': [1],
-        },
-        'GradientBoostingClassifier': {
-            'learning_rate': [0.1],
-        },
-        'HistGradientBoostingClassifier': {
-            'learning_rate': (0.0001, 0.1, 'log-uniform'),
-            'max_iter': [50, 100, 200, 400, 1000],
-            'max_depth': [None, 2, 4, 6],
-        },
-    }
+    run_name = '_'.join([database.name, dataset, blcd, Model.__name__])
+    run_dir = Path(cfg['output_dir']) / run_name
+    run_dir.mkdir(parents=True, exist_ok=True)
+    with mlflow.start_run(run_name=run_name, nested=True) as run:
 
-    results = []
-    for dataset in ['smarp', 'sharp', 'combined']:
-        for balanced in [True, False]:
-            dataset_blc = dataset + '_' + ('balanced' if balanced else 'raw')
-            X_train, X_test, y_train, y_test, groups_train, _ = get_dataset_numpy(
-                database_dir, dataset, cfg['auxdata'], balanced=balanced, seed=cfg['seed'])
-            # # Visualize processed train and test splits
-            # from eda import plot_selected_samples
-            # title = database_dir.name + ' ' + dataset_blc
-            # fig = plot_selected_samples(X_train, X_test, y_train, y_test, cfg['features'],
-            #                             title=title)
-            # fig.show()
-            # continue
-            for Model in Models:
-                t_start = time.time()
-                param_space = distributions[Model.__name__]
+    param_space = DISTRIBUTIONS[Model.__name__]
+    best_model, df = tune(X_train, y_train, groups_train,
+                          Model, param_space, method='bayes',
+                          save_dir=run_dir)
+    # Alternatively, param_space = GRIDS[Model.__name__] and use 'grid' method
 
-                run_name = '_'.join([database_dir.name, dataset_blc, Model.__name__])
-                run_dir = Path(cfg['output_dir']) / run_name
-                run_dir.mkdir(parents=True, exist_ok=True)
-                with mlflow.start_run(run_name=run_name, nested=True) as run:
+    scores = evaluate(X_test, y_test, best_model, save_dir=run_dir)
 
-                    best_model, df = tune(X_train, y_train, groups_train,
-                                          Model, param_space, method='bayes',
-                                          save_dir=run_dir)
-                    # Alternatively, param_space = grids[Model.__name__] and use 'grid' method
-                    print(f'\nCV results of {Model.__name__} on {database_dir} {dataset_blc}:')
-                    print(df.to_markdown(tablefmt='grid'))
-
-                    scores = evaluate(X_test, y_test, best_model, save_dir=run_dir)
-
-                    #mlflow.log_param('sampling_strategy', best_model.best_params_['rus__sampling_strategy'])
-                    mlflow.log_params({k.replace('model__', ''): v for k, v in
-                        best_model.best_params_.items() if k.startswith('model__')})
-                    mlflow.set_tag('database_name', database_dir.name)
-                    mlflow.set_tag('dataset_name', dataset)
-                    mlflow.set_tag('balanced', balanced)
-                    mlflow.set_tag('estimator_name', Model.__name__)
-                    mlflow.log_metrics(scores)
-                    #mlflow.sklearn.log_model(best_model, 'mlflow_model')
-
-                r = {
-                    'database': database_dir.name,
-                    'dataset': dataset_blc,
-                    'model': Model.__name__,
-                    'time': time.time() - t_start,
-                }
-                r.update(scores)
-                r.update({
-                    'params': dict(best_model.best_params_),
-                })
-                results.append(r)
-
-    results_df = pd.DataFrame(results)
-    save_path = Path(cfg['output_dir']) / f'{database_dir.name}_results.md'
-    results_df.to_markdown(save_path, tablefmt='grid')
-    results_df.to_csv(save_path.with_suffix('.csv'))
-    print(results_df.to_markdown(tablefmt='grid'))
+    mlflow.log_metrics(scores)
+    #mlflow.log_param('sampling_strategy', best_model.best_params_['rus__sampling_strategy'])
+    mlflow.log_params({k.replace('model__', ''): v for k, v in
+        best_model.best_params_.items() if k.startswith('model__')})
+    result.update(scores)
+    result.update({
+        'params': dict(best_model.best_params_),
+    })
+    return result
 
 
 def test_seed():
@@ -419,15 +381,51 @@ if __name__ == '__main__':
     test_seed()
 
     t_start = time.time()
+    results = []
+    databases = [p for p in (Path(cfg['data_root']) / 'preprocessed').iterdir() if p.is_dir()]
+    # databases = [Path(cfg['data_root']) / 'preprocessed' / d for d in [
+    #     'M_Q_24hr',
+    #     #'MX_Q_6hr',
+    # ]]
     mlflow.set_experiment(cfg['experiment_name'])
     with mlflow.start_run(run_name=cfg['run_name']) as run:
-        databases = [p for p in (Path(cfg['data_root']) / 'preprocessed').iterdir() if p.is_dir()]
-        # databases = [Path(cfg['data_root']) / 'preprocessed' / d for d in [
-        #     'M_Q_24hr',
-        #     #'MX_Q_6hr',
-        # ]]
-        logging.info(databases)
-        for database in databases:
-            sklearn_main(database)
+        for database in tqdm(databases):
+            for dataset in tqdm(['smarp', 'sharp', 'combined']):
+                for balanced in [True, False]:
+                    X_train, X_test, y_train, y_test, groups_train, _ = get_dataset_numpy(
+                        database, dataset, cfg['auxdata'], balanced=balanced, seed=cfg['seed'])
+                    # from eda import plot_selected_samples
+                    # fig = plot_selected_samples(X_train, X_test, y_train, y_test, cfg['features'],
+                    #                             title=database.name + ' ' + dataset + ' ' + balanced)
+                    # fig.show()
+                    # continue
+                    for Model in MODELS:
+                        t_start_model = time.time()
+                        r = launch(database, dataset, balanced,
+                                         X_train, X_test, y_train, y_test)
+                        result = {
+                            'database': database.name,
+                            'dataset': dataset_blc,
+                            'model': Model.__name__,
+                            'time': time.time() - t_start_model,
+                        }
+                        result.update(r)
+                        results.append(result)
+
+                        mlflow.set_tag('database_name', database.name)
+                        mlflow.set_tag('dataset_name', dataset)
+                        mlflow.set_tag('balanced', balanced)
+                        mlflow.set_tag('estimator_name', Model.__name__)
+                        #mlflow.sklearn.log_model(best_model, 'mlflow_model')
+                        print(f'\nCV results of {Model.__name__} on {database} {dataset} {blcd}:')
+                        print(df.to_markdown(tablefmt='grid'))
+
+
+
+    results_df = pd.DataFrame(results)
+    save_path = Path(cfg['output_dir']) / f'{database.name}_results.md'
+    results_df.to_markdown(save_path, tablefmt='grid')
+    results_df.to_csv(save_path.with_suffix('.csv'))
+    print(results_df.to_markdown(tablefmt='grid'))
 
     print('Run time: {} s'.format(time.time() - t_start))

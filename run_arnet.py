@@ -156,9 +156,9 @@ def sweep():
     mlflow.set_experiment(args.experiment_name)
     with mlflow.start_run(run_name=args.run_name):
         for database in databases:
-            for balanced in [True, False]:
-                for config in configs:
-                    for dataset in ['sharp', 'smarp', 'combined']:
+            for dataset in ['sharp', 'smarp', 'combined']:
+                for balanced in [True, False]:
+                    for config in configs:
                         opts = [
                             'DATA.DATABASE', database,
                             'DATA.DATASET', dataset,
