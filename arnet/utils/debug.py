@@ -9,6 +9,9 @@ def plot(data, *args, **kwargs):
         data = np.array(data)
 
     if data.ndim == 1:
+        args = list(args)
+        if isinstance(args[0], torch.Tensor):
+            args[0] = args[0].detach().cpu().numpy()
         plt.plot(data, *args, **kwargs)
         plt.legend()
     elif data.ndim == 2:

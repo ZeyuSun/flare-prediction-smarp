@@ -170,6 +170,16 @@ class ActiveRegionDataModule(pl.LightningDataModule):
             validation=True,
             seed=self.cfg.DATA.SEED)
 
+        # # Refit on train and validation
+        # self.df_train, self.df_test = get_datasets(
+        #     self.cfg.DATA.DATABASE,
+        #     self.cfg.DATA.DATASET,
+        #     self.cfg.DATA.AUXDATA,
+        #     sizes=sizes,
+        #     validation=False,
+        #     seed=self.cfg.DATA.SEED)
+        # self.df_val = self.df_test
+
         self.df_vis = self.df_test.iloc[:4] #sharp_train.loc[sharp_train['arpnum'] == 377].iloc[0:8:2]
 
     def set_class_weight(self, cfg):
@@ -185,6 +195,7 @@ class ActiveRegionDataModule(pl.LightningDataModule):
         #sampler = RandomSampler(dataset, len(dataset) // 2)
         loader = DataLoader(dataset,
                             batch_size=self.cfg.DATA.BATCH_SIZE,
+                            shuffle=True,
                             #sampler=sampler,
                             drop_last=True,
                             num_workers=self.cfg.DATA.NUM_WORKERS,

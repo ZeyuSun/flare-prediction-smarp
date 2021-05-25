@@ -45,7 +45,7 @@ class Learner(pl.LightningModule):
         return self.model(*args, **kwargs)
 
     def on_load_checkpoint(self, checkpoint) -> None:
-        ckpt_dict = next(iter(checkpoint['callbacks'].values()))
+        ckpt_dict = checkpoint['callbacks'][pl.callbacks.model_checkpoint.ModelCheckpoint]
         log_dir = os.path.dirname(ckpt_dict['dirpath'])
         root_dir, version = os.path.split(log_dir)
         save_dir, name = os.path.split(root_dir)
@@ -156,6 +156,7 @@ class Learner(pl.LightningModule):
         avg_val_loss = torch.stack([out['val_loss'] for out in outputs]).mean()
         self.log('validation/loss', avg_val_loss)
         mlflow.log_metric('validation/loss', avg_val_loss.item(), step=self.global_step)
+        mlflow.log_artifacts(self.logger.log_dir, 'tensorboard')
 
         if self.model.mode == 'classification':
             y_true = torch.cat([out['y_true'] for out in outputs])
@@ -312,8 +313,8 @@ class Learner(pl.LightningModule):
     def log_scores(self, tag, scores: dict, step=None):
         step = step or self.global_step
         for k, v in scores.items():
-            self.tb.add_scalar(tag + '/' + k, v, step)
-            #self.log(tag + '/' + k, v) wield problem
+            #self.tb.add_scalar(tag + '/' + k, v, step)
+            self.log(tag + '/' + k, v) #wield problem
         mlflow.log_metrics({tag + '/' + k: v.item() for k, v in scores.items()},
                            step=step)
 

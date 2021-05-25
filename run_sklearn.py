@@ -351,7 +351,8 @@ def sklearn_main(database_dir):
                     mlflow.log_params({k.replace('model__', ''): v for k, v in
                         best_model.best_params_.items() if k.startswith('model__')})
                     mlflow.set_tag('database_name', database_dir.name)
-                    mlflow.set_tag('dataset_name', dataset_blc)
+                    mlflow.set_tag('dataset_name', dataset)
+                    mlflow.set_tag('balanced', balanced)
                     mlflow.set_tag('estimator_name', Model.__name__)
                     mlflow.log_metrics(scores)
                     #mlflow.sklearn.log_model(best_model, 'mlflow_model')

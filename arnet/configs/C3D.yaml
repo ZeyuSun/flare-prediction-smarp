@@ -13,10 +13,11 @@ DATA:
 
 LEARNER:
   CLASS_WEIGHT: 'balanced'
-  LEARNING_RATE: 1e-4
+  LEARNING_RATE: 2e-4
+  PATIENCE: 20
   MODEL:
     NAME: 'SimpleC3D'
     SETTINGS: 'c3d'
 
 TRAINER:
-  max_epochs: 15
+  max_epochs: 20

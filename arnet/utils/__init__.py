@@ -1,5 +1,6 @@
 from .cfgnode import *
 from .data import *
+from .debug import *
 from .gradcam import *
 from .logger import *
 from .metrics import *

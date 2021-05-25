@@ -12,7 +12,22 @@ from arnet.config import cfg
 
 
 def train(cfg, dm, resume=False):
-    trainer = pl.Trainer(**cfg.TRAINER.todict())
+    callbacks = [
+        pl.callbacks.early_stopping.EarlyStopping(
+            monitor='validation/auc',
+            patience=cfg.LEARNER.PATIENCE,
+            mode='max',
+            #verbose=True,
+        ),
+        pl.callbacks.ModelCheckpoint(
+            monitor='validation/auc',
+            save_top_k=1,
+            mode='max',
+        ),
+    ]
+    kwargs = cfg.TRAINER.todict()
+    kwargs.setdefault('callbacks', []).extend(callbacks)
+    trainer = pl.Trainer(**kwargs)
     if resume:
         learner = Learner.load_from_checkpoint(resume, cfg=cfg)
     else:
@@ -79,9 +94,9 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('-s', '--smoke', action='store_true',
                         help='Smoke test')
-    parser.add_argument('-e', '--experiment_name', default='experiment',
+    parser.add_argument('-e', '--experiment_name', default='arnet',
                         help='MLflow experiment name')
-    parser.add_argument('-r', '--run_name', default='arnet',
+    parser.add_argument('-r', '--run_name', default='c3d',
                         help='MLflow run name')
     parser.add_argument('--config', metavar='FILE',
                         help="Path to a yaml formatted config file")
@@ -141,20 +156,23 @@ def sweep():
     mlflow.set_experiment(args.experiment_name)
     with mlflow.start_run(run_name=args.run_name):
         for database in databases:
-            for config in configs:
-                for dataset in ['sharp', 'smarp', 'combined']:
-                    opts = [
-                        'DATA.DATABASE', database,
-                        'DATA.DATASET', dataset,
-                    ]
-                    run_name = '_'.join([database.name, config.stem, dataset])
-                    with mlflow.start_run(run_name=run_name, nested=True):
-                        tt = time.time()
-                        launch(config, 'train|test', False, args.opts + opts)
-                        mlflow.log_metric('time', time.time() - tt)
-                        mlflow.set_tag('database_name', database.name)
-                        mlflow.set_tag('estimator_name', config.stem)
-                        mlflow.set_tag('dataset_name', dataset)
+            for balanced in [True, False]:
+                for config in configs:
+                    for dataset in ['sharp', 'smarp', 'combined']:
+                        opts = [
+                            'DATA.DATABASE', database,
+                            'DATA.DATASET', dataset,
+                            'DATA.BALANCED', balanced,
+                        ]
+                        run_name = '_'.join([database.name, config.stem, dataset])
+                        with mlflow.start_run(run_name=run_name, nested=True):
+                            tt = time.time()
+                            launch(config, 'train|test', False, args.opts + opts)
+                            mlflow.log_metric('time', time.time() - tt)
+                            mlflow.set_tag('database_name', database.name)
+                            mlflow.set_tag('balanced', balanced)
+                            mlflow.set_tag('estimator_name', config.stem)
+                            mlflow.set_tag('dataset_name', dataset)
 
     print('Run time: {} s'.format(time.time() - t_start))
 

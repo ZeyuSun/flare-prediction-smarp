@@ -2,6 +2,10 @@
 Restrictions:
     Argument can't be None
     Cmd line / yaml argument type must match this file
+    Default config:
+        * Task: Predict MX vs Quiet in future 24 hr
+        * Dataset: class-balanced sharp, 24 hr observation
+        * Model: 3D CNN
 """
 from arnet.utils import CfgNode as CN
 
@@ -14,8 +18,8 @@ cfg.DATA.AUXDATA = 'datasets/auxiliary/sharp2smarp.npy'
 cfg.DATA.BALANCED = True
 cfg.DATA.SEED = None
 cfg.DATA.FEATURES = [
-    #'MAGNETOGRAM',
-    'AREA', 'USFLUX', 'MEANGBZ', 'R_VALUE',
+    'MAGNETOGRAM',
+    #'AREA', 'USFLUX', 'MEANGBZ', 'R_VALUE',
     #'FLARE_INDEX',
 ]
 # Input dimensions
@@ -36,6 +40,7 @@ cfg.LEARNER = CN()
 cfg.LEARNER.CLASS_WEIGHT = [1, 1] # list or 'balanced', default=None
 cfg.LEARNER.LEARNING_RATE = 1e-4 # Don't change it here!
 cfg.LEARNER.CHECKPOINT = "" # path to checkpoint file to read from
+cfg.LEARNER.PATIENCE = 8
 ### For visualization
 cfg.LEARNER.VIS = CN()
 cfg.LEARNER.VIS.GRADCAM_LAYERS = []#['convs.conv3']
@@ -43,8 +48,8 @@ cfg.LEARNER.VIS.ACTIVATIONS = []#['convs.conv3']
 cfg.LEARNER.VIS.HISTOGRAM = []#['convs.conv3', 'linear1']
 ### For model
 cfg.LEARNER.MODEL = CN()
-cfg.LEARNER.MODEL.NAME = 'SimpleLSTM'
-cfg.LEARNER.MODEL.SETTINGS = 'cnn'
+cfg.LEARNER.MODEL.NAME = 'SimpleC3D'
+cfg.LEARNER.MODEL.SETTINGS = 'c3d'
 
 cfg.TRAINER = CN()
 cfg.TRAINER.distributed_backend = None #"ddp" #None
