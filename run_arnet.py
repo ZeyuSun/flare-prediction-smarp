@@ -10,6 +10,9 @@ from arnet.dataset import ActiveRegionDataModule
 from arnet.modeling.learner import Learner, build_test_logger
 from arnet.config import cfg
 
+# TODO: calling getLogger repeatedly somehow creates multiple loggers
+logger = utils.setup_logger('outputs')
+
 
 def train(cfg, dm, resume=False):
     callbacks = [
@@ -64,7 +67,6 @@ def launch(config, modes, resume, opts):
     # cfg.freeze()
     mlflow.log_params(cfg.flatten())
 
-    logger = utils.setup_logger(cfg.MISC.OUTPUT_DIR)
     #logger.info(cfg)
     logger.info("{} {} {}".format(
         cfg.DATA.DATABASE,
