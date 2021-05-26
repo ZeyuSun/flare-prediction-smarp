@@ -57,7 +57,6 @@ def get_dataset_numpy(database, dataset, auxdata, balanced=False, seed=None):
 
     df_train, df_test = get_datasets(database, dataset, auxdata,
                                      sizes=sizes, validation=False, shuffle=True, seed=seed)
-    df_train.to_csv('train0.csv')
     X_train, y_train, g_train = get_dataset_from_df(df_train)
     X_test, y_test, g_test = get_dataset_from_df(df_test)
 
@@ -317,57 +316,60 @@ def sklearn_main(database_dir):
     }
 
     results = []
-    for dataset in ['smarp', 'sharp', 'combined']:
-        for balanced in [True, False]:
-            dataset_blc = dataset + '_' + ('balanced' if balanced else 'raw')
-            X_train, X_test, y_train, y_test, groups_train, _ = get_dataset_numpy(
-                database_dir, dataset, cfg['auxdata'], balanced=balanced, seed=cfg['seed'])
-            # # Visualize processed train and test splits
-            # from eda import plot_selected_samples
-            # title = database_dir.name + ' ' + dataset_blc
-            # fig = plot_selected_samples(X_train, X_test, y_train, y_test, cfg['features'],
-            #                             title=title)
-            # fig.show()
-            # continue
-            for Model in Models:
-                t_start = time.time()
-                param_space = distributions[Model.__name__]
+    for cfg['seed'] in range(5):
+        for dataset in ['smarp', 'sharp', 'fused_smarp', 'fused_sharp']:
+            for balanced in [True]:
+                dataset_blc = dataset + '_' + ('balanced' if balanced else 'raw')
+                X_train, X_test, y_train, y_test, groups_train, _ = get_dataset_numpy(
+                    database_dir, dataset, cfg['auxdata'], balanced=balanced, seed=cfg['seed'])
+                # # Visualize processed train and test splits
+                # from eda import plot_selected_samples
+                # title = database_dir.name + ' ' + dataset_blc
+                # fig = plot_selected_samples(X_train, X_test, y_train, y_test, cfg['features'],
+                #                             title=title)
+                # fig.show()
+                # continue
+                for Model in Models:
+                    t_start = time.time()
+                    param_space = distributions[Model.__name__]
 
-                run_name = '_'.join([database_dir.name, dataset_blc, Model.__name__])
-                run_dir = Path(cfg['output_dir']) / run_name
-                run_dir.mkdir(parents=True, exist_ok=True)
-                with mlflow.start_run(run_name=run_name, nested=True) as run:
+                    run_name = '_'.join([database_dir.name, dataset_blc, Model.__name__])
+                    run_dir = Path(cfg['output_dir']) / run_name
+                    run_dir.mkdir(parents=True, exist_ok=True)
+                    with mlflow.start_run(run_name=run_name, nested=True) as run:
 
-                    best_model, df = tune(X_train, y_train, groups_train,
-                                          Model, param_space, method='bayes',
-                                          save_dir=run_dir)
-                    # Alternatively, param_space = grids[Model.__name__] and use 'grid' method
-                    print(f'\nCV results of {Model.__name__} on {database_dir} {dataset_blc}:')
-                    print(df.to_markdown(tablefmt='grid'))
+                        best_model, df = tune(X_train, y_train, groups_train,
+                                              Model, param_space, method='bayes',
+                                              save_dir=run_dir)
+                        # Alternatively, param_space = grids[Model.__name__] and use 'grid' method
+                        print(f'\nCV results of {Model.__name__} on {database_dir} {dataset_blc}:')
+                        print(df.to_markdown(tablefmt='grid'))
 
-                    scores = evaluate(X_test, y_test, best_model, save_dir=run_dir)
+                        scores = evaluate(X_test, y_test, best_model, save_dir=run_dir)
 
-                    #mlflow.log_param('sampling_strategy', best_model.best_params_['rus__sampling_strategy'])
-                    mlflow.log_params({k.replace('model__', ''): v for k, v in
-                        best_model.best_params_.items() if k.startswith('model__')})
-                    mlflow.set_tag('database_name', database_dir.name)
-                    mlflow.set_tag('dataset_name', dataset)
-                    mlflow.set_tag('balanced', balanced)
-                    mlflow.set_tag('estimator_name', Model.__name__)
-                    mlflow.log_metrics(scores)
-                    #mlflow.sklearn.log_model(best_model, 'mlflow_model')
+                        #mlflow.log_param('sampling_strategy', best_model.best_params_['rus__sampling_strategy'])
+                        mlflow.log_params({k.replace('model__', ''): v for k, v in
+                            best_model.best_params_.items() if k.startswith('model__')})
+                        mlflow.set_tag('database_name', database_dir.name)
+                        mlflow.set_tag('dataset_name', dataset)
+                        mlflow.set_tag('balanced', balanced)
+                        mlflow.set_tag('estimator_name', Model.__name__)
+                        mlflow.set_tag('seed', cfg['seed'])
+                        mlflow.log_metrics(scores)
+                        #mlflow.sklearn.log_model(best_model, 'mlflow_model')
 
-                r = {
-                    'database': database_dir.name,
-                    'dataset': dataset_blc,
-                    'model': Model.__name__,
-                    'time': time.time() - t_start,
-                }
-                r.update(scores)
-                r.update({
-                    'params': dict(best_model.best_params_),
-                })
-                results.append(r)
+                    r = {
+                        'database': database_dir.name,
+                        'dataset': dataset_blc,
+                        'model': Model.__name__,
+                        'time': time.time() - t_start,
+                        'seed': cfg['seed'],
+                    }
+                    r.update(scores)
+                    r.update({
+                        'params': dict(best_model.best_params_),
+                    })
+                    results.append(r)
 
     results_df = pd.DataFrame(results)
     save_path = Path(cfg['output_dir']) / f'{database_dir.name}_results.md'
@@ -389,7 +391,7 @@ if __name__ == '__main__':
     parser.add_argument('-a', '--auxdata', default='datasets/auxiliary/sharp2smarp.npy')
     parser.add_argument('-s', '--smoke', action='store_true')
     parser.add_argument('-e', '--experiment_name', default='leaderboard1')
-    parser.add_argument('-r', '--run_name', default='sklearn_balanced')
+    parser.add_argument('-r', '--run_name', default='sklearn_dataset')
     parser.add_argument('-o', '--output_dir', default='outputs')
     parser.add_argument('--seed', default=0)
     args = parser.parse_args()
@@ -422,10 +424,10 @@ if __name__ == '__main__':
     mlflow.set_experiment(cfg['experiment_name'])
     with mlflow.start_run(run_name=cfg['run_name']) as run:
         databases = [p for p in (Path(cfg['data_root']) / 'preprocessed').iterdir() if p.is_dir()]
-        # databases = [Path(cfg['data_root']) / 'preprocessed' / d for d in [
-        #     'M_Q_24hr',
-        #     #'MX_Q_6hr',
-        # ]]
+        databases = [Path(cfg['data_root']) / 'preprocessed' / d for d in [
+            'M_Q_24hr',
+            #'MX_Q_6hr',
+        ]]
         logging.info(databases)
         for database in databases:
             sklearn_main(database)
