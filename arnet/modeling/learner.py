@@ -64,6 +64,9 @@ class Learner(pl.LightningModule):
         self.tb = self.logger.experiment
         mlflow.set_tag('logger_version', self.logger.version)
 
+    # def on_train_start(self):
+    #     self.logger.log_hyperparams(self.hparams, {"test/auc": 0, "test/hss2": 0})
+
     def grad_norm(self, norm_type: Union[float, int, str]) -> Dict[str, float]:
         """Compute each parameter's gradient's norm and their overall norm.
 
@@ -156,7 +159,6 @@ class Learner(pl.LightningModule):
         avg_val_loss = torch.stack([out['val_loss'] for out in outputs]).mean()
         self.log('validation/loss', avg_val_loss)
         mlflow.log_metric('validation/loss', avg_val_loss.item(), step=self.global_step)
-        mlflow.log_artifacts(self.logger.log_dir, 'tensorboard')
 
         if self.model.mode == 'classification':
             y_true = torch.cat([out['y_true'] for out in outputs])
@@ -175,6 +177,7 @@ class Learner(pl.LightningModule):
             self.log_cm('validation/cmq', cmq, step=self.val_curr_epoch)
         else:
             raise ValueError
+        mlflow.log_artifacts(self.logger.log_dir, 'tensorboard/train_val')
 
     def test_step(self, batch, batch_idx):
         x, target, m = batch
@@ -254,6 +257,7 @@ class Learner(pl.LightningModule):
             pass
         else:
             raise ValueError
+        mlflow.log_artifacts(self.logger.log_dir, 'tensorboard/test')
 
     def configure_optimizers(self):
         return torch.optim.Adam(self.parameters(), lr=self.cfg.LEARNER.LEARNING_RATE)

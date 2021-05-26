@@ -10,6 +10,9 @@ from arnet.dataset import ActiveRegionDataModule
 from arnet.modeling.learner import Learner, build_test_logger
 from arnet.config import cfg
 
+# TODO: calling getLogger repeatedly somehow creates multiple loggers
+logger = utils.setup_logger('outputs')
+
 
 def train(cfg, dm, resume=False):
     callbacks = [
@@ -25,8 +28,13 @@ def train(cfg, dm, resume=False):
             mode='max',
         ),
     ]
+    # log_hparams in tensorboard
+    #tb_logger = pl.loggers.TensorBoardLogger(save_dir, default_hp_metric=False)
+    #how to get save_dir before init trainer?
+
     kwargs = cfg.TRAINER.todict()
     kwargs.setdefault('callbacks', []).extend(callbacks)
+    #kwargs['logger'] = tb_logger
     trainer = pl.Trainer(**kwargs)
     if resume:
         learner = Learner.load_from_checkpoint(resume, cfg=cfg)
@@ -64,8 +72,7 @@ def launch(config, modes, resume, opts):
     # cfg.freeze()
     mlflow.log_params(cfg.flatten())
 
-    logger = utils.setup_logger(cfg.MISC.OUTPUT_DIR)
-    #logger.info(cfg)
+    # logger.info(cfg)
     logger.info("{} {} {}".format(
         cfg.DATA.DATABASE,
         config,
