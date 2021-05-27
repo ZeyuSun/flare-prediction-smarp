@@ -4,8 +4,8 @@ DATA:
     'MAGNETOGRAM'
   ]
   NUM_FRAMES: 1
-  HEIGHT: 64
-  WIDTH: 128
+  HEIGHT: 157
+  WIDTH: 298
   TRANSFORMS: [
     'Resize',
     'Standardize'
@@ -14,7 +14,7 @@ DATA:
 LEARNER:
   CLASS_WEIGHT: 'balanced'
   #LEARNING_RATE: 1e-3
-  PATIENCE: 20
+  PATIENCE: 5 # CNN has less params and more prone to overfitting
   MODEL:
     NAME: 'SimpleC3D'
     SETTINGS: 'cnn'

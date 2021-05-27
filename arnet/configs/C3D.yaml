@@ -4,8 +4,8 @@ DATA:
     'MAGNETOGRAM'
   ]
   NUM_FRAMES: 16
-  HEIGHT: 64
-  WIDTH: 128
+  HEIGHT: 157
+  WIDTH: 298
   TRANSFORMS: [
     'Resize',
     'Standardize'
@@ -14,7 +14,7 @@ DATA:
 LEARNER:
   CLASS_WEIGHT: 'balanced'
   LEARNING_RATE: 2e-4
-  PATIENCE: 20
+  PATIENCE: 5
   MODEL:
     NAME: 'SimpleC3D'
     SETTINGS: 'c3d'

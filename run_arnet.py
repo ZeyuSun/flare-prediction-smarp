@@ -67,7 +67,7 @@ def launch(config, modes, resume, opts):
     # cfg.freeze()
     mlflow.log_params(cfg.flatten())
 
-    #logger.info(cfg)
+    logger.info(cfg)
     logger.info("{} {} {}".format(
         cfg.DATA.DATABASE,
         config,
@@ -138,7 +138,7 @@ def sweep():
     parser.add_argument('-c', '--config_root', default='arnet/configs')
     parser.add_argument('-s', '--smoke', action='store_true')
     parser.add_argument('-e', '--experiment_name', default='arnet')
-    parser.add_argument('-r', '--run_name', default='gamma')
+    parser.add_argument('-r', '--run_name', default='c3d_cnn_preprocessing')
     parser.add_argument('opts', default=None, nargs=argparse.REMAINDER)
     args = parser.parse_args()
     if args.smoke:
@@ -153,28 +153,36 @@ def sweep():
 
     t_start = time.time()
     databases = [p for p in (Path(args.data_root) / 'preprocessed').iterdir() if p.is_dir()]
-    databases = [Path(args.data_root) / 'preprocessed' / f'M_Q_{t}hr' for t in [6,12,24]]
+    databases = [Path(args.data_root) / 'preprocessed' / f'M_Q_{t}hr' for t in [24]]
     configs = [c for c in Path(args.config_root).iterdir()]
+    configs = [Path('arnet/configs') / f'{c}.yaml' for c in ['CNN', 'C3D']]
     mlflow.set_experiment(args.experiment_name)
     with mlflow.start_run(run_name=args.run_name):
         for database in databases:
-            for balanced in [True, False]:
-                for config in configs:
-                    for dataset in ['sharp', 'smarp', 'combined']:
-                        opts = [
-                            'DATA.DATABASE', database,
-                            'DATA.DATASET', dataset,
-                            'DATA.BALANCED', balanced,
-                        ]
-                        run_name = '_'.join([database.name, config.stem, dataset])
-                        with mlflow.start_run(run_name=run_name, nested=True):
-                            tt = time.time()
-                            launch(config, 'train|test', False, args.opts + opts)
-                            mlflow.log_metric('time', time.time() - tt)
-                            mlflow.set_tag('database_name', database.name)
-                            mlflow.set_tag('balanced', balanced)
-                            mlflow.set_tag('estimator_name', config.stem)
-                            mlflow.set_tag('dataset_name', dataset)
+            for balanced in [True]:
+                for dataset in ['sharp']:
+                    for config in configs:
+                        for transforms in [
+                            #['Standardize', 'Resize'],
+                            ['Standardize', 'CenterCropPad'],
+                        ]:
+                            for seed in range(5):
+                                opts = [
+                                    'DATA.DATABASE', database,
+                                    'DATA.DATASET', dataset,
+                                    'DATA.BALANCED', balanced,
+                                    'DATA.TRANSFORMS', transforms,
+                                    'DATA.SEED', seed,
+                                ]
+                                run_name = '_'.join([database.name, config.stem, dataset])
+                                with mlflow.start_run(run_name=run_name, nested=True):
+                                    tt = time.time()
+                                    launch(config, 'train|test', False, args.opts + opts)
+                                    mlflow.log_metric('time', time.time() - tt)
+                                    mlflow.set_tag('database_name', database.name)
+                                    mlflow.set_tag('balanced', balanced)
+                                    mlflow.set_tag('estimator_name', config.stem)
+                                    mlflow.set_tag('dataset_name', dataset)
 
     print('Run time: {} s'.format(time.time() - t_start))
 

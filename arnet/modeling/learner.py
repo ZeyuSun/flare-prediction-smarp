@@ -284,7 +284,7 @@ class Learner(pl.LightningModule):
         # (N,C,D,H,W) -> (N,T,C,H,W)
         step = step or self.global_step
         if not normalized:
-            video = utils.array_to_float_video(video * const.STD, low=-200, high=200, perc=False)
+            video = utils.array_to_float_video(video * 50, low=-200, high=200, perc=False)
         self.tb.add_video(tag, video, step, fps=10)
         vs = video.detach().cpu().numpy()
         for i, v in enumerate(vs):
