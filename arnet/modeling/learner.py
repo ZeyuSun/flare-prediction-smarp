@@ -110,9 +110,7 @@ class Learner(pl.LightningModule):
             print(json.dumps(norms, indent=2))
 
     def training_step(self, batch, batch_idx):
-        x, target, m = batch
-        output = self(x)
-        loss = self.model.get_loss(output, target)
+        loss = self(batch)
         self._check_nan_loss(loss)
 
         # Scalar(s)
@@ -122,7 +120,7 @@ class Learner(pl.LightningModule):
         if self.image:
             # Text
             if self.global_step in [0] or batch_idx == 0:
-                self.log_meta(x, m, self.model.result, model_type=self.model.mode)
+                self.log_meta(self.model.result, model_type=self.model.mode)
 
             # Input videos (padded)
             if False: #self.global_step in [0] or batch_idx == 0:
@@ -130,10 +128,10 @@ class Learner(pl.LightningModule):
 
             # Middle layer features
             if False: #self.global_step in [0] or batch_idx == 0:
-                self.log_layer_activations('train features', x, self.cfg.LEARNER.VIS.ACTIVATIONS)
+                self.log_layer_activations('train features', self.model.result['image'], self.cfg.LEARNER.VIS.ACTIVATIONS)
 
             # Weight histograms
-            if False: #self.global_step in [0] or batch_idx == 0:
+            if True: #self.global_step in [0] or batch_idx == 0:
                 for layer_name in self.cfg.LEARNER.VIS.HISTOGRAM:
                     self.tb.add_histogram("weights/{} kernel".format(layer_name),
                         utils.get_layer(self.model, layer_name).weight, self.global_step)
@@ -142,9 +140,7 @@ class Learner(pl.LightningModule):
         return {'loss': loss}
 
     def validation_step(self, batch, batch_idx):
-        x, target, m = batch
-        output = self(x)
-        loss = self.model.get_loss(output, target)
+        loss = self(batch)
 
         result = self.model.result
         result.update({'val_loss': loss})
@@ -177,10 +173,8 @@ class Learner(pl.LightningModule):
         mlflow.log_artifacts(self.logger.log_dir, 'tensorboard/train_val')
 
     def test_step(self, batch, batch_idx):
-        x, target, m = batch
         if self.testmode == 'test':
-            output = self(x)
-            loss = self.model.get_loss(output, target)
+            loss = self(batch)
             result = self.model.result
             result.update({'test_loss': loss})
             return result
@@ -259,7 +253,9 @@ class Learner(pl.LightningModule):
     def configure_optimizers(self):
         return torch.optim.Adam(self.parameters(), lr=self.cfg.LEARNER.LEARNING_RATE)
 
-    def log_meta(self, video, meta, outputs, model_type='classification', step=None):
+    def log_meta(self, outputs, model_type='classification', step=None):
+        video = outputs['image']
+        meta = outputs['meta']
         video = video.detach().cpu().numpy()
         if model_type == 'classification':
             y_true = outputs['y_true'].detach().cpu().numpy()
@@ -284,7 +280,7 @@ class Learner(pl.LightningModule):
         # (N,C,D,H,W) -> (N,T,C,H,W)
         step = step or self.global_step
         if not normalized:
-            video = utils.array_to_float_video(video * const.STD, low=-200, high=200, perc=False)
+            video = utils.array_to_float_video(video * 50, low=-200, high=200, perc=False)
         self.tb.add_video(tag, video, step, fps=10)
         vs = video.detach().cpu().numpy()
         for i, v in enumerate(vs):

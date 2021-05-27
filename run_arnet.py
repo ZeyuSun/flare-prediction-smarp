@@ -67,7 +67,7 @@ def launch(config, modes, resume, opts):
     # cfg.freeze()
     mlflow.log_params(cfg.flatten())
 
-    #logger.info(cfg)
+    logger.info(cfg)
     logger.info("{} {} {}".format(
         cfg.DATA.DATABASE,
         config,

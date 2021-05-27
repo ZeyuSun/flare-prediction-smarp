@@ -55,7 +55,7 @@ def get_thresh(y_true, y_prob, criterion=None):
     if y_true.sum() == 0:
         logging.warning('Return thresh 0.5, because no positive samples in targets, true positive value should be meaningless')
         return 0.5 # ValueError: No positive samples in targets, true positive value should be meaningless
-    fpr, tpr, thresholds = roc(y_prob, y_true, num_classes=2)
+    fpr, tpr, thresholds = roc(y_prob, y_true) #, num_classes=2)
     fpr, tpr, thresholds = fpr[1:], tpr[1:], thresholds[1:]  # remove added point
     if criterion == 'tss':
         TSS = tpr - fpr

@@ -60,13 +60,14 @@ class ActiveRegionDataset(Dataset):
         transforms (callable): Transform to apply to samples.
     """
     def __init__(self, df_sample, features=None, num_frames=16, transform=None):
-        self.df_sample = df_sample
-
+        # Default values and assertions
         features = features or ['MAGNETOGRAM']
-        if 'MAGNETOGRAM' in features and len(features) > 1:
-            raise ValueError('combining image with parameter not allowed')
-        self.features = features
         assert 1 <= num_frames <= 16, 'num_frames not in [1,16]'
+
+        self.df_sample = df_sample
+        self.parameters = [f for f in features if f != 'MAGNETOGRAM']
+        self.yield_videos = 'MAGNETOGRAM' in features
+        self.yield_parameters = len(self.parameters) > 0
         self.num_frames = num_frames
         self.transform = transform
 
@@ -77,10 +78,11 @@ class ActiveRegionDataset(Dataset):
         s = self.df_sample.iloc[idx]
 
         # data
-        if 'MAGNETOGRAM' in self.features: # image
-            data = self.load_video(s['prefix'], s['arpnum'], s['t_end'], s['bad_img_idx'])
-        else: # parameters
-            data = self.load_parameters(s['prefix'], s['arpnum'], s['t_end'])
+        data_list = []
+        if self.yield_videos:
+            data_list.append(self.load_video(s['prefix'], s['arpnum'], s['t_end'], s['bad_img_idx']))
+        if self.yield_parameters:
+            data_list.append(self.load_parameters(s['prefix'], s['arpnum'], s['t_end']))
 
         # label
         label = int(s['label'])
@@ -89,7 +91,7 @@ class ActiveRegionDataset(Dataset):
         t_end = datetime.strptime(s['t_end'], '%Y-%m-%d %H:%M:%S').strftime('%Y%m%d%H%M%S')
         largest_flare = max(s['flares'].split('|')) #WARNING: X10+
         meta = f'{s["prefix"]}{s["arpnum"]:06d}_{t_end}_H0_W0_{largest_flare}.npy'
-        return data, label, meta
+        return *data_list, label, meta
 
     def load_video(self, prefix, arpnum, t_end, bad_img_idx):
         t_end = drms.to_datetime(t_end)
@@ -111,7 +113,7 @@ class ActiveRegionDataset(Dataset):
         t_end = datetime.strptime(t_end, '%Y-%m-%d %H:%M:%S') #2013-07-03 01:36:00
         t_start = t_end - timedelta(minutes=96) * (self.num_frames - 1)
         t_recs = pd.date_range(t_start, t_end, freq='96min').strftime('%Y.%m.%d_%H:%M:%S_TAI')
-        df = query_parameters(prefix, arpnum, t_recs, self.features)
+        df = query_parameters(prefix, arpnum, t_recs, self.parameters)
         df = df.fillna(method='bfill')
 
         # Check na is time consuming. If na, loss will be nan
@@ -133,9 +135,9 @@ class ActiveRegionDataset(Dataset):
             dataset = 'SMARP'
         else:
             raise
-        mean = [v for k, v in CONSTANTS[dataset + '_MEAN'].items() if k in self.features]
-        std = [v for k, v in CONSTANTS[dataset + '_STD'].items() if k in self.features]
-        df[self.features] = (df.values - mean) / std  # runtime: arr - arr < df - arr
+        mean = [v for k, v in CONSTANTS[dataset + '_MEAN'].items() if k in self.parameters]
+        std = [v for k, v in CONSTANTS[dataset + '_STD'].items() if k in self.parameters]
+        df[self.parameters] = (df.values - mean) / std  # runtime: arr - arr < df - arr
         return df
 
 
@@ -187,71 +189,48 @@ class ActiveRegionDataModule(pl.LightningDataModule):
         cfg.DATA.CLASS_WEIGHT = [1-p, p]
         return cfg
 
-    def train_dataloader(self):
-        dataset = ActiveRegionDataset(self.df_train,
+    def get_dataloader(self, df_sample, drop_last=False):
+        dataset = ActiveRegionDataset(df_sample,
                                       features=self.cfg.DATA.FEATURES,
                                       num_frames=self.cfg.DATA.NUM_FRAMES,
                                       transform=self.transform)
-        #sampler = RandomSampler(dataset, len(dataset) // 2)
-        loader = DataLoader(dataset,
-                            batch_size=self.cfg.DATA.BATCH_SIZE,
-                            shuffle=True,
-                            #sampler=sampler,
-                            drop_last=True,
-                            num_workers=self.cfg.DATA.NUM_WORKERS,
-                            pin_memory=True)
+        dataloader = DataLoader(dataset,
+                                batch_size=self.cfg.DATA.BATCH_SIZE,
+                                shuffle=False,
+                                drop_last=drop_last,
+                                num_workers=self.cfg.DATA.NUM_WORKERS,
+                                pin_memory=True)
+        return dataloader
+
+    def train_dataloader(self):
+        loader = self.get_dataloader(self.df_train, drop_last=True)
         return loader
 
     def val_dataloader(self):
-        dataset = ActiveRegionDataset(self.df_val,
-                                      features=self.cfg.DATA.FEATURES,
-                                      num_frames=self.cfg.DATA.NUM_FRAMES,
-                                      transform=self.transform)
-        loader = DataLoader(dataset,
-                            batch_size=self.cfg.DATA.BATCH_SIZE,
-                            num_workers=self.cfg.DATA.NUM_WORKERS,
-                            pin_memory=True)
+        loader = self.get_dataloader(self.df_val)
         return loader
 
     def test_dataloader(self):
         if self.testmode == 'test':
-            dataset = ActiveRegionDataset(self.df_test,
-                                          features=self.cfg.DATA.FEATURES,
-                                          num_frames=self.cfg.DATA.NUM_FRAMES,
-                                          transform=self.transform)
-            loader = DataLoader(dataset,
-                                batch_size=self.cfg.DATA.BATCH_SIZE,
-                                num_workers=self.cfg.DATA.NUM_WORKERS,
-                                pin_memory=True)
+            loader = self.get_dataloader(self.df_test)
         elif self.testmode == 'visualize_predictions':
-            dataset = ActiveRegionDataset(self.df_vis,
-                                          features=self.cfg.DATA.FEATURES,
-                                          num_frames=self.cfg.DATA.NUM_FRAMES,
-                                          transform=self.transform)
-            loader = DataLoader(dataset,
-                                batch_size=self.cfg.DATA.BATCH_SIZE,
-                                num_workers=0,
-                                pin_memory=False)
+            loader = self.get_dataloader(self.df_vis)
         elif self.testmode == 'visualize_features':
-            dataset = ActiveRegionDataset(self.df_vis,
-                                          features=self.cfg.DATA.FEATURES,
-                                          num_frames=self.cfg.DATA.NUM_FRAMES,
-                                          transform=self.transform)
-            loader = DataLoader(dataset,
-                                batch_size=1,
-                                num_workers=0,
-                                pin_memory=False)
+            loader = self.get_dataloader(self.df_vis)
         else:
             raise
         return loader
 
 
 if __name__ == '__main__':
-    df_sample = pd.read_csv('datasets/preprocessed/MX_Q_6hr/smarp_train.csv')
-    dataset = ActiveRegionDataset(df_sample, features=['MAGNETOGRAM'], num_frames=16, transform=None)
-    for idx, (sample, _, m) in enumerate(dataset):
-        if not sample.isnan().any():
+    df = pd.read_csv('datasets/preprocessed/M_Q_6hr/sharp.csv')
+    df.loc[:, 'flares'] = df['flares'].fillna('')
+    df.loc[:, 'bad_img_idx'] = df['bad_img_idx'].apply(
+        lambda s: [int(x) for x in s.strip('[]').split()])
+    dataset = ActiveRegionDataset(df, features=['MAGNETOGRAM', 'AREA'], num_frames=16, transform=None)
+    for idx, (videos, params, _, m) in enumerate(dataset):
+        if not videos.isnan().any():
             continue
-        nanmap = sample.isnan().detach().cpu().numpy()
+        nanmap = videos.isnan().detach().cpu().numpy()
         print(m)
         print(nanmap)

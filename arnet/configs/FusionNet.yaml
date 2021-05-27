@@ -1,0 +1,28 @@
+DATA:
+  SEED: 0
+  FEATURES: [
+    'MAGNETOGRAM',
+    'USFLUX',
+    'MEANGBZ',
+    'R_VALUE',
+    'AREA',
+  ]
+  NUM_FRAMES: 16
+  HEIGHT: 64
+  WIDTH: 128
+  TRANSFORMS: [
+    'Resize',
+    'Standardize'
+  ]
+
+LEARNER:
+  CLASS_WEIGHT: 'balanced'
+  LEARNING_RATE: 2e-1
+  PATIENCE: 20
+  MODEL:
+    NAME: 'FusionNet'
+    SETTINGS: 'fusion'
+
+TRAINER:
+  max_epochs: 20
+  track_grad_norm: 1
