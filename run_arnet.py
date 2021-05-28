@@ -138,7 +138,7 @@ def sweep():
     parser.add_argument('-c', '--config_root', default='arnet/configs')
     parser.add_argument('-s', '--smoke', action='store_true')
     parser.add_argument('-e', '--experiment_name', default='arnet')
-    parser.add_argument('-r', '--run_name', default='fusesize_cnn_convbn')
+    parser.add_argument('-r', '--run_name', default='fusesize_no_bn')
     parser.add_argument('opts', default=None, nargs=argparse.REMAINDER)
     args = parser.parse_args()
     if args.smoke:
@@ -155,7 +155,7 @@ def sweep():
     databases = [p for p in (Path(args.data_root) / 'preprocessed').iterdir() if p.is_dir()]
     databases = [Path(args.data_root) / 'preprocessed' / f'M_Q_{t}hr' for t in [24]]
     #configs = [c for c in Path(args.config_root).iterdir()]
-    configs = [Path('arnet/configs') / f'{c}.yaml' for c in ['FusionNet']]
+    configs = [Path('arnet/configs') / f'{c}.yaml' for c in ['CNN', 'C3D', 'FusionCNN', 'FusionC3D']]
     mlflow.set_experiment(args.experiment_name)
     with mlflow.start_run(run_name=args.run_name):
         for database in databases:

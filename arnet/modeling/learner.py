@@ -121,7 +121,7 @@ class Learner(pl.LightningModule):
 
             # Middle layer features
             if False: #self.global_step in [0] or batch_idx == 0:
-                self.log_layer_activations('train features', self.model.result['image'], self.cfg.LEARNER.VIS.ACTIVATIONS)
+                self.log_layer_activations('train features', self.model.result['video'], self.cfg.LEARNER.VIS.ACTIVATIONS)
 
             # Weight histograms
             if True: #self.global_step in [0] or batch_idx == 0:
@@ -247,7 +247,7 @@ class Learner(pl.LightningModule):
         return torch.optim.Adam(self.parameters(), lr=self.cfg.LEARNER.LEARNING_RATE)
 
     def log_meta(self, outputs, model_type='classification', step=None):
-        video = outputs['image']
+        video = outputs['video']
         meta = outputs['meta']
         video = video.detach().cpu().numpy()
         if model_type == 'classification':
