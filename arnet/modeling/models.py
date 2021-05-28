@@ -195,7 +195,6 @@ class FusionNet(nn.Module):
 
         input_shape = (1, cfg.DATA.NUM_FRAMES, cfg.DATA.HEIGHT, cfg.DATA.WIDTH)
         s = SETTINGS[cfg.LEARNER.MODEL.SETTINGS]
-        s['out_features'].append(2)
 
         # Convolution layers
         convs = OrderedDict()
@@ -221,8 +220,11 @@ class FusionNet(nn.Module):
         # Fused layers
         fused = OrderedDict()
         out_prev += 2
-        for i, out in enumerate(s['out_features'][s['fuse_point']+1:]):
+        out_dims = s['out_features'][s['fuse_point'] + 1:] + [2]
+        for i, out in enumerate(out_dims):
             fused[f'fused{i+1}'] = nn.Linear(out_prev, out)
+            if i == len(out_dims) - 1:
+                break
             fused[f'fused_relu{i+1}'] = nn.LeakyReLU()
             fused[f'fused_bn{i+1}'] = nn.BatchNorm1d(out)
             out_prev = out
