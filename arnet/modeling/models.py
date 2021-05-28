@@ -41,6 +41,13 @@ SETTINGS = {
         'poolings': [[2, 4, 4], [2, 2, 2], [2, 2, 2]],
         'out_features': [512, 64],
     },
+    'fusion_cnn': {
+        'out_channels': [16, 16, 16],
+        'kernels': [[1, 5, 5], [1, 3, 3], [1, 3, 3]],
+        'paddings': [[0, 2, 2], [0, 1, 1], [0, 1, 1]],
+        'poolings': [[1, 2, 2], [1, 2, 2], [1, 2, 2]],
+        'out_features': [64, 32],
+    },
 }
 
 
@@ -207,24 +214,13 @@ class FusionNet(nn.Module):
         for i in range(1, len(out_features)):
             self.convs_linears.add_module(f'linear{i}', nn.Linear(out_features[i - 1], out_features[i]))
             self.convs_linears.add_module(f'relu_lin{i}', nn.ReLU())
-            # self.linears.add_module(f'bn_lin{i}', nn.BatchNorm1d(out_features[i]))
+            self.convs_linears.add_module(f'bn_lin{i}', nn.BatchNorm1d(out_features[i]))
         self.convs_linears.add_module(f'linear{len(out_features)}', nn.Linear(out_features[-1], 64))
-
-        print(self.infer_output_shape(self.convs, input_shape), fc_input_dim)
-        summary(self.convs.cuda(), (input_shape))
-
-        self.lstm = nn.LSTM(
-            input_size=len(cfg.DATA.FEATURES)-1,
-            hidden_size=64,
-            num_layers=2,
-            batch_first=True,
-            #dropout=0.5,
-        )
+        # summary(self.convs.cuda(), (input_shape))
+        # print(self.infer_output_shape(self.convs, input_shape), fc_input_dim) # input type is not cuda, but weight is
 
         self.linears = nn.Sequential(
-            nn.Linear(128, 64),
-            nn.LeakyReLU(),
-            nn.Linear(64, 32),
+            nn.Linear(66, 32),
             nn.LeakyReLU(),
             nn.Linear(32, 2),
         )
@@ -244,16 +240,13 @@ class FusionNet(nn.Module):
         return output.shape[1:]
 
     def forward(self, batch):
-        image, param, target, meta = batch
+        image, size, target, meta = batch
 
         x1 = self.convs(image)
         x1 = torch.flatten(x1, 1)
         x1 = self.convs_linears(x1)
 
-        x2, (hn, cn) = self.lstm(param, None) # x.shape = [N (batch), T (seq), C (channels)]
-        x2 = x2[:,-1,:]
-
-        x = torch.cat((x1, x2), dim=1)
+        x = torch.cat((x1, size), dim=1)
         x = self.linears(x)
 
         log_prob = F.log_softmax(x, dim=-1)

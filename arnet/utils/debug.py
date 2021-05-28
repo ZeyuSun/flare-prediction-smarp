@@ -4,7 +4,7 @@ def plot(data, *args, **kwargs):
     import matplotlib.pyplot as plt
     import torch
     if isinstance(data, torch.Tensor):
-        data = data.detach().cpu().numpy()
+        data = data.double().detach().cpu().numpy() #float16 doesn't work
     elif not isinstance(data, np.ndarray):
         data = np.array(data)
 
@@ -51,3 +51,23 @@ def imshow(prefix, arpnum, t_rec):
     data = fits_open(filepath)
     plt.imshow(data)
     plt.show()
+
+
+def check(tensor):
+    """check nan and inf"""
+    import numpy as np
+    array = tensor.detach().cpu().numpy() # torch.any can only reduce one dim
+    nans = np.isnan(array)
+    infs = np.isinf(array)
+    if nans.any():
+        for i in range(nans.ndim):
+            axis = tuple([j for j in range(nans.ndim) if j != i]) # has to be a tuple, list won't work
+            print(i, nans.any(axis=axis))
+
+    if infs.any():
+        for i in range(infs.ndim):
+            axis = tuple([j for j in range(infs.ndim) if j != i]) # has to be a tuple, list won't work
+            print(i, infs.any(axis=axis))
+
+    if not (nans.any() or infs.any()):
+        print('Good tensor!')

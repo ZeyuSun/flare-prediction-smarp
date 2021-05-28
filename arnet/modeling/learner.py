@@ -57,13 +57,6 @@ class Learner(pl.LightningModule):
         self.logger_save_dir, self.logger_name, self.logger_version = (
             save_dir, name, version)
 
-    def on_fit_start(self):
-        # self.loss_weight = torch.tensor([1, self.cfg.LEARNER.LOSS_PN_RATIO],
-        #                                 dtype=torch.float32)#.to('cuda:0') #self.device)
-        # self.loss_fn = losses.get_loss_fn(self.cfg.LEARNER.LOSS_TYPE, weight=self.loss_weight)
-        self.tb = self.logger.experiment
-        mlflow.set_tag('logger_version', self.logger.version)
-
     def grad_norm(self, norm_type: Union[float, int, str]) -> Dict[str, float]:
         """Compute each parameter's gradient's norm and their overall norm.
 
@@ -133,10 +126,10 @@ class Learner(pl.LightningModule):
             # Weight histograms
             if True: #self.global_step in [0] or batch_idx == 0:
                 for layer_name in self.cfg.LEARNER.VIS.HISTOGRAM:
-                    self.tb.add_histogram("weights/{} kernel".format(layer_name),
+                    self.logger.experiment.add_histogram("weights/{} kernel".format(layer_name),
                         utils.get_layer(self.model, layer_name).weight, self.global_step)
 
-        self.tb.flush()
+        self.logger.experiment.flush()
         return {'loss': loss}
 
     def validation_step(self, batch, batch_idx):
@@ -269,7 +262,7 @@ class Learner(pl.LightningModule):
         else:
             raise ValueError
         step = step or self.global_step
-        self.tb.add_text("batch info", info.to_markdown(), step)
+        self.logger.experiment.add_text("batch info", info.to_markdown(), step)
         return info
 
     def log_video(self, tag, video, normalized=False, step=None):
@@ -281,7 +274,7 @@ class Learner(pl.LightningModule):
         step = step or self.global_step
         if not normalized:
             video = utils.array_to_float_video(video * 50, low=-200, high=200, perc=False)
-        self.tb.add_video(tag, video, step, fps=10)
+        self.logger.experiment.add_video(tag, video, step, fps=10)
         vs = video.detach().cpu().numpy()
         for i, v in enumerate(vs):
             for j, image in enumerate(v):
@@ -302,7 +295,7 @@ class Learner(pl.LightningModule):
             for c in range(features.shape[1]):
                 features_c = features[:,[c],:,:,:].permute(0,2,1,3,4)
                 features_c = utils.array_to_float_video(features_c, 0.1, 99.9)
-                self.tb.add_video(
+                self.logger.experiment.add_video(
                     '{}/{}/ch{}'.format(tag, layer_name, c),
                     features_c,
                     step)
@@ -310,7 +303,7 @@ class Learner(pl.LightningModule):
     def log_scores(self, tag, scores: dict, step=None):
         step = step or self.global_step
         for k, v in scores.items():
-            #self.tb.add_scalar(tag + '/' + k, v, step)
+            #self.logger.experiment.add_scalar(tag + '/' + k, v, step)
             self.log(tag + '/' + k, v) #wield problem
         mlflow.log_metrics({tag + '/' + k: v.item() for k, v in scores.items()},
                            step=step)
@@ -318,7 +311,7 @@ class Learner(pl.LightningModule):
     def log_cm(self, tag, cm, labels=None, step=None):
         fig = utils.draw_confusion_matrix(cm.cpu())
         image_tensor = utils.fig2rgb(fig)
-        self.tb.add_image(tag, image_tensor, step)
+        self.logger.experiment.add_image(tag, image_tensor, step)
         mlflow.log_figure(fig, tag + '/confusion_matrix.png')
 
     def log_eval_plots(self, tag, y_true, y_prob, step=None):
@@ -329,14 +322,14 @@ class Learner(pl.LightningModule):
         reliability = utils.draw_reliability_plot(y_true, y_prob, n_bins=10)
         mlflow.log_figure(reliability, tag + '/reliability.png')
         reliability = utils.fig2rgb(reliability)
-        self.tb.add_image(tag + '/reliability', reliability, step)
+        self.logger.experiment.add_image(tag + '/reliability', reliability, step)
 
         roc = utils.draw_roc(y_true, y_prob)
         mlflow.log_figure(roc, tag + '/roc.png')
         roc = utils.fig2rgb(roc)
-        self.tb.add_image(tag + '/roc', roc, step)
+        self.logger.experiment.add_image(tag + '/roc', roc, step)
 
         ssp = utils.draw_ssp(y_true, y_prob)
         mlflow.log_figure(ssp, tag + '/ssp.png')
         ssp = utils.fig2rgb(ssp)
-        self.tb.add_image(tag + '/ssp', ssp, step)
+        self.logger.experiment.add_image(tag + '/ssp', ssp, step)

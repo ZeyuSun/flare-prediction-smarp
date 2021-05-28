@@ -80,7 +80,9 @@ class ActiveRegionDataset(Dataset):
         # data
         data_list = []
         if self.yield_videos:
-            data_list.append(self.load_video(s['prefix'], s['arpnum'], s['t_end'], s['bad_img_idx']))
+            video, size = self.load_video(s['prefix'], s['arpnum'], s['t_end'], s['bad_img_idx'])
+            data_list.append(video)
+            data_list.append(size)
         if self.yield_parameters:
             data_list.append(self.load_parameters(s['prefix'], s['arpnum'], s['t_end']))
 
@@ -105,9 +107,12 @@ class ActiveRegionDataset(Dataset):
         video = query(filepaths)
         video = torch.from_numpy(video)
         video = torch.unsqueeze(video, 0) # C,T,H,W
+        size = torch.tensor(video.shape[-2:], dtype=torch.float) # convert to tensor, otherwise batching gives list not tensor
+        size -= torch.tensor([78, 157])
+        size /= torch.tensor([38, 78])
         if self.transform:
             video = self.transform(video)
-        return video
+        return video, size
 
     def load_parameters(self, prefix, arpnum, t_end):
         t_end = datetime.strptime(t_end, '%Y-%m-%d %H:%M:%S') #2013-07-03 01:36:00
