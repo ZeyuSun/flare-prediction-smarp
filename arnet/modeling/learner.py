@@ -103,7 +103,7 @@ class Learner(pl.LightningModule):
             print(json.dumps(norms, indent=2))
 
     def training_step(self, batch, batch_idx):
-        loss = self(batch)
+        loss = self.model.get_loss(batch)
         self._check_nan_loss(loss)
 
         # Scalar(s)
@@ -133,7 +133,7 @@ class Learner(pl.LightningModule):
         return {'loss': loss}
 
     def validation_step(self, batch, batch_idx):
-        loss = self(batch)
+        loss = self.model.get_loss(batch)
 
         result = self.model.result
         result.update({'val_loss': loss})
@@ -167,7 +167,7 @@ class Learner(pl.LightningModule):
 
     def test_step(self, batch, batch_idx):
         if self.testmode == 'test':
-            loss = self(batch)
+            loss = self.model.get_loss(batch)
             result = self.model.result
             result.update({'test_loss': loss})
             return result

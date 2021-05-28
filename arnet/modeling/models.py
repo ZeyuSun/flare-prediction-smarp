@@ -46,7 +46,8 @@ SETTINGS = {
         'kernels': [[1, 5, 5], [1, 3, 3], [1, 3, 3]],
         'paddings': [[0, 2, 2], [0, 1, 1], [0, 1, 1]],
         'poolings': [[1, 2, 2], [1, 2, 2], [1, 2, 2]],
-        'out_features': [64, 32],
+        'out_features': [64, 32, 4],
+        'fuse_point': 1,
     },
 }
 
@@ -192,38 +193,42 @@ class FusionNet(nn.Module):
         self.set_class_weight(cfg)
         self.result = {}
 
-        input_shape = (1, cfg.DATA.NUM_FRAMES, cfg.DATA.HEIGHT, cfg.DATA.WIDTH)  # (1, 121, 64, 128)
-        kernels = SETTINGS[cfg.LEARNER.MODEL.SETTINGS]['kernels']
-        paddings = SETTINGS[cfg.LEARNER.MODEL.SETTINGS]['paddings']
-        poolings = SETTINGS[cfg.LEARNER.MODEL.SETTINGS]['poolings']
-        out_channels = SETTINGS[cfg.LEARNER.MODEL.SETTINGS]['out_channels']
-        out_features = SETTINGS[cfg.LEARNER.MODEL.SETTINGS]['out_features']
+        input_shape = (1, cfg.DATA.NUM_FRAMES, cfg.DATA.HEIGHT, cfg.DATA.WIDTH)
+        s = SETTINGS[cfg.LEARNER.MODEL.SETTINGS]
+        s['out_features'].append(2)
 
-        self.input_shape = input_shape  # needed when testing
-        in_channels = [input_shape[0]] + out_channels
-        self.convs = nn.Sequential()
-        for i in range(len(kernels)):
-            self.convs.add_module(f'conv{i+1}', nn.Conv3d(in_channels[i], in_channels[i+1], kernels[i], padding=paddings[i]))
-            self.convs.add_module(f'relu{i+1}', nn.LeakyReLU())
-            self.convs.add_module(f'pool{i+1}', nn.MaxPool3d(poolings[i]))
-            #self.convs.add_module(f'bn{i+1}',   nn.BatchNorm3d(out_channels[0]))
-        fc_input_dim = self.infer_output_shape(self.convs, input_shape).numel()
+        # Convolution layers
+        convs = OrderedDict()
+        out_prev = input_shape[0]
+        for i, (out, kern, pad, pool) in enumerate(zip(s['out_channels'], s['kernels'], s['paddings'], s['poolings'])):
+            convs[f'conv{i+1}'] = nn.Conv3d(out_prev, out, kern, padding=pad)
+            convs[f'conv_relu{i+1}'] = nn.LeakyReLU()
+            convs[f'conv_pool{i+1}'] = nn.MaxPool3d(pool)
+            convs[f'conv_bn{i+1}'] = nn.BatchNorm3d(out)
+            out_prev = out
+        self.convs = nn.Sequential(convs)
 
-        out_features = [fc_input_dim] + out_features
-        self.convs_linears = nn.Sequential()
-        for i in range(1, len(out_features)):
-            self.convs_linears.add_module(f'linear{i}', nn.Linear(out_features[i - 1], out_features[i]))
-            self.convs_linears.add_module(f'relu_lin{i}', nn.ReLU())
-            self.convs_linears.add_module(f'bn_lin{i}', nn.BatchNorm1d(out_features[i]))
-        self.convs_linears.add_module(f'linear{len(out_features)}', nn.Linear(out_features[-1], 64))
-        # summary(self.convs.cuda(), (input_shape))
-        # print(self.infer_output_shape(self.convs, input_shape), fc_input_dim) # input type is not cuda, but weight is
+        # Linear layers
+        linears = OrderedDict()
+        out_prev = self.infer_output_shape(self.convs, input_shape).numel()
+        for i, out in enumerate(s['out_features'][:s['fuse_point']+1]):
+            linears[f'linear{i+1}'] = nn.Linear(out_prev, out)
+            linears[f'linear_relu{i+1}'] = nn.LeakyReLU()
+            linears[f'linear_bn{i+1}'] = nn.BatchNorm1d(out)
+            out_prev = out
+        self.linears = nn.Sequential(linears)
 
-        self.linears = nn.Sequential(
-            nn.Linear(66, 32),
-            nn.LeakyReLU(),
-            nn.Linear(32, 2),
-        )
+        # Fused layers
+        fused = OrderedDict()
+        out_prev += 2
+        for i, out in enumerate(s['out_features'][s['fuse_point']+1:]):
+            fused[f'fused{i+1}'] = nn.Linear(out_prev, out)
+            fused[f'fused_relu{i+1}'] = nn.LeakyReLU()
+            fused[f'fused_bn{i+1}'] = nn.BatchNorm1d(out)
+            out_prev = out
+        self.fused = nn.Sequential(fused)
+
+        summary(self.cuda(), [input_shape, (2,)])
 
     def set_class_weight(self, cfg):
         if cfg.LEARNER.CLASS_WEIGHT is None:
@@ -239,16 +244,18 @@ class FusionNet(nn.Module):
         output = model(input)
         return output.shape[1:]
 
-    def forward(self, batch):
-        image, size, target, meta = batch
-
+    def forward(self, image, size):
         x1 = self.convs(image)
         x1 = torch.flatten(x1, 1)
-        x1 = self.convs_linears(x1)
+        x1 = self.linears(x1)
 
         x = torch.cat((x1, size), dim=1)
-        x = self.linears(x)
+        x = self.fused(x)
+        return x
 
+    def get_loss(self, batch):
+        image, size, target, meta = batch
+        x = self(image, size)
         log_prob = F.log_softmax(x, dim=-1)
         loss = F.nll_loss(log_prob, target, weight=self.class_weight, reduction='mean')
 
