@@ -18,13 +18,12 @@ RAW_DATA_DIR = '/data2'
 
 
 c = drms.Client(debug=False, verbose=False, email=EMAIL)
-SHARP_LOS_HEADER_DIR = os.path.join(RAW_DATA_DIR, 'SHARP/header_los')
-SHARP_VEC_HEADER_DIR = os.path.join(RAW_DATA_DIR, 'SHARP/header_vec')
+SHARP_HEADER_DIR = os.path.join(RAW_DATA_DIR, 'SHARP/header')
 SHARP_IMAGE_DIR = os.path.join(RAW_DATA_DIR, 'SHARP/image')
 SMARP_HEADER_DIR = os.path.join(RAW_DATA_DIR, 'SMARP/header')
 SMARP_IMAGE_DIR = os.path.join(RAW_DATA_DIR, 'SMARP/image')
 GOES_DIR = os.path.join(RAW_DATA_DIR, 'GOES')
-for folder in [SHARP_LOS_HEADER_DIR, SHARP_VEC_HEADER_DIR, SHARP_IMAGE_DIR,
+for folder in [SHARP_HEADER_DIR, SHARP_IMAGE_DIR,
                SMARP_HEADER_DIR, SMARP_IMAGE_DIR,
                GOES_DIR]:
     if not os.path.exists(folder):
@@ -32,8 +31,7 @@ for folder in [SHARP_LOS_HEADER_DIR, SHARP_VEC_HEADER_DIR, SHARP_IMAGE_DIR,
 
 
 def download_sharp_headers(harpnum):
-    #### Download sharp_vec headers
-    filename = os.path.join(SHARP_VEC_HEADER_DIR, f'HARP{harpnum:06d}_ATTRS.csv')
+    filename = os.path.join(SHARP_HEADER_DIR, f'HARP{harpnum:06d}_ATTRS.csv')
     if os.path.exists(filename):
         # Header exists
         return 1
@@ -56,34 +54,6 @@ def download_sharp_headers(harpnum):
 
     keys.to_csv(filename, index=None)
 
-    #### Download sharp_los headers
-    filename = os.path.join(SHARP_LOS_HEADER_DIR, f'HARP{harpnum:06d}_ATTRS.csv')
-    if os.path.exists(filename):
-        # Header exists
-        return 4
-
-    vec_header = os.path.join(SHARP_VEC_HEADER_DIR, f'HARP{harpnum:06d}_ATTRS.csv')
-    if not os.path.exists(vec_header):
-        # No corresponding SHARP_VEC header
-        return 5
-
-    keys = c.query(f'su_mbobra.sharp_loskeystest_720s[{harpnum}][][? (QUALITY<65536) ?]',
-                   key=drms.const.all)  # NOAA_NUM >= 1 satisfied by corresp. SHARP_VEC header
-    if len(keys) == 0:
-        # Header has no record subject to the constraints
-        return 6
-
-    t_rec = drms.to_datetime(keys['T_REC'])
-    d = t_rec[0].date()
-    start_date = datetime(d.year, d.month, d.day)
-    delta = timedelta(minutes=96)
-    mod = (t_rec - start_date) % delta
-    keys = keys[mod.dt.seconds == 0]
-    if len(keys) == 0:
-        # Header has no record aligned with MDI recording times
-        return 7
-
-    keys.to_csv(filename, index=None)
     return 0
 
 
@@ -92,7 +62,7 @@ def download_smarp_headers(tarpnum):
     if os.path.exists(filename):
         return 1
 
-    keys = c.query(f'su_mbobra.smarp_cea_96m[{tarpnum}][][? (QUALITY<262144) ?][? (NOAA_NUM>=1) ?]',
+    keys = c.query(f'mdi.smarp_cea_96m[{tarpnum}][][? (QUALITY<262144) ?][? (NOAA_NUM>=1) ?]',
                    key=drms.const.all)
     if len(keys) == 0:
         return 2
@@ -118,7 +88,7 @@ def _filename_from_export_record(rs):
 
 
 def download_sharp_images(harpnum):
-    header = os.path.join(SHARP_VEC_HEADER_DIR, f'HARP{harpnum:06d}_ATTRS.csv')
+    header = os.path.join(SHARP_HEADER_DIR, f'HARP{harpnum:06d}_ATTRS.csv')
     if not os.path.exists(header):
         return 1
 
@@ -128,8 +98,8 @@ def download_sharp_images(harpnum):
 
     df = pd.read_csv(header)
     t1, t2 = df['T_REC'].iloc[0], df['T_REC'].iloc[-1]
-    request = c.export(f'hmi.sharp_cea_720s[{harpnum}][{t1}-{t2}@96m][? (QUALITY<65536) ?]{{magnetogram}}') #,
-                       #method='url', protocol='fits') # can't be pickled by in parallel pool
+    request = c.export(f'hmi.sharp_cea_720s[{harpnum}][{t1}-{t2}@96m][? (QUALITY<65536) ?]{{magnetogram}}')
+                       #method='url', protocol='fits') # can't be pickled by parallel pool
     if len(request.data) == 0:
         return 2
 
@@ -154,11 +124,11 @@ def download_smarp_images(tarpnum):
 
     df = pd.read_csv(header)
     t1, t2 = df['T_REC'].iloc[0], df['T_REC'].iloc[-1]
-    request = c.export(f'su_mbobra.smarp_cea_96m[{tarpnum}][{t1}-{t2}@96m][? (QUALITY<262144) ?]{{magnetogram}}')
+    request = c.export(f'mdi.smarp_cea_96m[{tarpnum}][{t1}-{t2}@96m][? (QUALITY<262144) ?]{{magnetogram}}')
     if len(request.data) == 0:
         return 2
 
-    downloaded = sorted([os.path.basename(f) for f in glob(os.path.join(image_dir, 'su_mbobra*'))])
+    downloaded = sorted([os.path.basename(f) for f in glob(os.path.join(image_dir, 'mdi*'))])
     filenames = request.data['record'].apply(_filename_from_export_record)
     idx = request.data[~filenames.isin(downloaded)].index
     if len(idx) == 0:
@@ -196,11 +166,10 @@ def download_goes():
     goes = pd.concat(df_list)
 
     # Drop 61 records with nan class
-    goes = goes.dropna(subset=['goes_class'])
+    goes = goes[goes['goes_class'] != '']
 
-    # Remove two C-class events without scales
-    #TODO: keep them
-    goes = goes[goes['goes_class'] != 'C']
+    # Two C-class events has no scales, but we keep them anyway
+    #goes = goes[goes['goes_class'] != 'C']
 
     goes.to_csv(os.path.join(GOES_DIR, 'goes.csv'), index=None)
 
@@ -234,14 +203,15 @@ def analyze(results, tag, images=False):
 if __name__ == '__main__':
     download_goes()
 
-    # Last Record = su_mbobra.sharp_loskeystest_720s[7545][2021.02.17_19:36:00_TAI]
-    results = batch_run(download_sharp_headers, 7545, 100)
+    # Last record we consider: hmi.sharp_cea_720s[7544][2021.02.03_04:12:00_TAI]
+    results = batch_run(download_sharp_headers, 7544, 100)
     analyze(results, 'sharp_headers')
 
+    # SMARP has TARPNUM from 1 to 13670
     results = batch_run(download_smarp_headers, 14000, 1000)
     analyze(results, 'smarp_headers')
 
-    results = batch_run(download_sharp_images, 7545, 100)
+    results = batch_run(download_sharp_images, 7544, 100)
     analyze(results, 'sharp_images', images=True)
 
     results = batch_run(download_smarp_images, 14000, 1000)
