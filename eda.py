@@ -1,6 +1,10 @@
 import os
 import argparse
 import pandas as pd
+import matplotlib.pyplot as plt
+from plotly.subplots import make_subplots
+import plotly.graph_objects as go
+import plotly.express as px
 
 
 def get_label_stats(df):
@@ -15,10 +19,6 @@ def get_label_stats(df):
 
 
 def plot_all_samples(dfs, names, dataset):
-    from plotly.subplots import make_subplots
-    import plotly.graph_objects as go
-    import plotly.express as px
-
     KEYWORDS = ['USFLUXL', 'MEANGBL', 'R_VALUE', 'AREA', 'FLARE_INDEX']
     prefix = 'HARP' if dataset == 'sharp' else 'TARP'
     title = dataset.upper() + ' Keywords'
@@ -97,6 +97,15 @@ def plot_selected_samples(X_train, X_test, y_train, y_test, features, title=None
     return fig
 
 
+def plot_scatter_matrix(df):
+    KEYWORDS = ['USFLUXL', 'MEANGBL', 'R_VALUE', 'AREA', 'FLARE_INDEX']
+    fig = px.scatter_matrix(df,
+                            #height=800,
+                            dimensions=KEYWORDS,
+                            color='label')
+    return fig
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--processed_data_dir', default='datasets')
@@ -116,6 +125,13 @@ if __name__ == '__main__':
             df_dict[d+dataset] = df
             stats_df = get_label_stats(df)
             print(stats_df.to_markdown(tablefmt='grid'))
+
+            fig = plot_scatter_matrix(df)
+            fig.show()
+
+            df.hist(bins=20)
+            plt.tight_layout()
+            plt.show()
 
             #fig = plot_all_samples([df], [data_dir + ' ' + dataset], dataset)
             # filepath = os.path.join(output_dir,
