@@ -12,9 +12,9 @@ from arnet.utils import CfgNode as CN
 cfg = CN()
 
 cfg.DATA = CN()
-cfg.DATA.DATABASE = 'datasets/preprocessed/M_Q_24hr'
+cfg.DATA.DATABASE = 'datasets/M_Q_24hr'
 cfg.DATA.DATASET = 'sharp'
-cfg.DATA.AUXDATA = 'datasets/auxiliary/sharp2smarp.npy'
+cfg.DATA.AUXDATA = 'datasets/sharp2smarp.npy'
 cfg.DATA.BALANCED = True
 cfg.DATA.SEED = None
 cfg.DATA.FEATURES = [

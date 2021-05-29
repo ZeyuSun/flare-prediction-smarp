@@ -228,7 +228,7 @@ class ActiveRegionDataModule(pl.LightningDataModule):
 
 
 if __name__ == '__main__':
-    df = pd.read_csv('datasets/preprocessed/M_Q_6hr/sharp.csv')
+    df = pd.read_csv('datasets/M_Q_6hr/sharp.csv')
     df.loc[:, 'flares'] = df['flares'].fillna('')
     df.loc[:, 'bad_img_idx'] = df['bad_img_idx'].apply(
         lambda s: [int(x) for x in s.strip('[]').split()])

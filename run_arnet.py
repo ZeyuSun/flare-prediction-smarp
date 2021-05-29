@@ -152,8 +152,8 @@ def sweep():
         ])
 
     t_start = time.time()
-    databases = [p for p in (Path(args.data_root) / 'preprocessed').iterdir() if p.is_dir()]
-    databases = [Path(args.data_root) / 'preprocessed' / f'M_Q_{t}hr' for t in [24]]
+    databases = [p for p in Path(args.data_root).iterdir() if p.is_dir()]
+    databases = [Path(args.data_root) / f'M_Q_{t}hr' for t in [24]]
     #configs = [c for c in Path(args.config_root).iterdir()]
     configs = [Path('arnet/configs') / f'{c}.yaml' for c in ['CNN', 'C3D', 'FusionCNN', 'FusionC3D']]
     mlflow.set_experiment(args.experiment_name)

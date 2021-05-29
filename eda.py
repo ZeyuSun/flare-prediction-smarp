@@ -99,7 +99,7 @@ def plot_selected_samples(X_train, X_test, y_train, y_test, features, title=None
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--processed_data_dir', default='datasets/preprocessed')
+    parser.add_argument('--processed_data_dir', default='datasets')
     #parser.add_argument('--output_dir', default='outputs')
     args = parser.parse_args()
 

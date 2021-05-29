@@ -249,7 +249,7 @@ def main(split_num, output_dir, val_time, criterion):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--raw_data_dir', default='/data2')
-    parser.add_argument('--processed_data_dir', default='datasets/preprocessed')
+    parser.add_argument('--processed_data_dir', default='datasets')
     parser.add_argument('--seed', default=0)
     args = parser.parse_args()
 

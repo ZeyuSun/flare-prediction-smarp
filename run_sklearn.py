@@ -386,7 +386,7 @@ def test_seed():
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('-d', '--data_root', default='datasets')
-    parser.add_argument('-a', '--auxdata', default='datasets/auxiliary/sharp2smarp.npy')
+    parser.add_argument('-a', '--auxdata', default='datasets/sharp2smarp.npy')
     parser.add_argument('-s', '--smoke', action='store_true')
     parser.add_argument('-e', '--experiment_name', default='sklearn')
     parser.add_argument('-r', '--run_name', default='gamma')
@@ -421,8 +421,8 @@ if __name__ == '__main__':
     t_start = time.time()
     mlflow.set_experiment(cfg['experiment_name'])
     with mlflow.start_run(run_name=cfg['run_name']) as run:
-        databases = [p for p in (Path(cfg['data_root']) / 'preprocessed').iterdir() if p.is_dir()]
-        # databases = [Path(cfg['data_root']) / 'preprocessed' / d for d in [
+        databases = [p for p in Path(cfg['data_root']).iterdir() if p.is_dir()]
+        # databases = [Path(cfg['data_root']) / d for d in [
         #     'M_Q_24hr',
         #     #'MX_Q_6hr',
         # ]]
