@@ -7,9 +7,8 @@ from functools import partial
 from datetime import datetime, timedelta
 import numpy as np
 import pandas as pd
-from tqdm import tqdm
 
-from arnet.utils import read_header, query
+from arnet.utils import read_header, query_images
 from utils import get_flare_index
 
 
@@ -29,7 +28,7 @@ def get_image_filepath(dataset, arpnum, t_rec):
     if dataset == 'sharp':
         return os.path.join(args.raw_data_dir, f'SHARP/image/{arpnum:06d}/hmi.sharp_cea_720s.{arpnum}.{t_rec}.magnetogram.fits')
     elif dataset == 'smarp':
-        return os.path.join(args.raw_data_dir, f'SMARP/image/{arpnum:06d}/su_mbobra.smarp_cea_96m.{arpnum}.{t_rec}.magnetogram.fits')
+        return os.path.join(args.raw_data_dir, f'SMARP/image/{arpnum:06d}/mdi.smarp_cea_96m.{arpnum}.{t_rec}.magnetogram.fits')
     else:
         raise
 
@@ -133,7 +132,7 @@ def select_per_arp(dataset, arpnum,
     shapes = []
     for t_rec in df.index:
         image_file = get_image_filepath(dataset, arpnum, t_rec)
-        image_data = query(image_file)
+        image_data = query_images(image_file)
         df.loc[t_rec, 'bad_img'] = np.any(np.isnan(image_data))
         shapes.append(image_data.shape)
 
@@ -224,7 +223,7 @@ def select(dataset, arpnums, val_time, criterion):
 
 def get_arpnums(dataset):
     if dataset == 'sharp':
-        header_dir = os.path.join(args.raw_data_dir, 'SHARP/header_vec')
+        header_dir = os.path.join(args.raw_data_dir, 'SHARP/header')
     elif dataset == 'smarp':
         header_dir = os.path.join(args.raw_data_dir, 'SMARP/header')
     else:
@@ -260,7 +259,7 @@ if __name__ == '__main__':
     T_REC_MIN = datetime(year=2010, month=10, day=29).strftime(T_REC_FORMAT)
     T_REC_MAX = datetime(year=2020, month=12, day=1).strftime(T_REC_FORMAT)
     OBS_TIME = timedelta(days=1)  # observation time
-    KEYWORDS = ['AREA', 'USFLUX', 'MEANGBZ', 'R_VALUE']
+    KEYWORDS = ['AREA', 'USFLUXL', 'MEANGBL', 'R_VALUE']
 
     GOES_TIME_FORMAT = '%Y-%m-%dT%H:%M:%S.000'
     GOES = pd.read_csv(os.path.join(args.raw_data_dir, 'GOES/goes.csv'))
@@ -281,7 +280,7 @@ if __name__ == '__main__':
 
     # begin preprocessing
     for criterion in ['M_Q', 'M_QS']:
-        for val_hours in [6, 12, 24, 48]:
+        for val_hours in [24]:
             output_dir = f'{criterion}_{val_hours}hr'
             logger.info(output_dir)
             print(output_dir)

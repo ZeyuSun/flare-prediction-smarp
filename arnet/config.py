@@ -19,7 +19,7 @@ cfg.DATA.BALANCED = True
 cfg.DATA.SEED = None
 cfg.DATA.FEATURES = [
     'MAGNETOGRAM',
-    #'AREA', 'USFLUX', 'MEANGBZ', 'R_VALUE',
+    #'AREA', 'USFLUXL', 'MEANGBL', 'R_VALUE',
     #'FLARE_INDEX',
 ]
 # Input dimensions

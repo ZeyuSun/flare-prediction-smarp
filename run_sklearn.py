@@ -395,7 +395,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     cfg = {
-        'features': ['AREA', 'USFLUX', 'MEANGBZ', 'R_VALUE'],
+        'features': ['AREA', 'USFLUXL', 'MEANGBL', 'R_VALUE'],
         'bayes': {
             'n_iter': 10, # light computation until the final stage
             'n_jobs': 20,

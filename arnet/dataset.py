@@ -11,7 +11,7 @@ import pytorch_lightning as pl
 
 from arnet.fusion import get_datasets
 from arnet.transforms import get_transform
-from arnet.utils import query, query_parameters, read_header
+from arnet.utils import query_images, query_parameters, read_header
 from arnet.constants import CONSTANTS
 
 
@@ -21,7 +21,7 @@ DATA_DIRS = {
 }
 SERIES = {
     'HARP': 'hmi.sharp_cea_720s',
-    'TARP': 'su_mbobra.smarp_cea_96m',
+    'TARP': 'mdi.smarp_cea_96m',
 }
 
 
@@ -104,7 +104,7 @@ class ActiveRegionDataset(Dataset):
         indices = imputed_indices(bad_img_idx, len(filenames))
         filepaths = [os.path.join(DATA_DIRS[prefix], f'{arpnum:06d}', filenames[k])
                      for k in indices]
-        video = query(filepaths)
+        video = query_images(filepaths)
         video = torch.from_numpy(video)
         video = torch.unsqueeze(video, 0) # C,T,H,W
         size = torch.tensor(video.shape[-2:], dtype=torch.float) # convert to tensor, otherwise batching gives list not tensor

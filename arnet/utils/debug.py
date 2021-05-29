@@ -41,7 +41,7 @@ def imshow(prefix, arpnum, t_rec):
     }
     SERIES = {
         'HARP': 'hmi.sharp_cea_720s',
-        'TARP': 'su_mbobra.smarp_cea_96m',
+        'TARP': 'mdi.smarp_cea_96m',
     }
     T_REC_FORMAT = '%Y.%m.%d_%H:%M:%S_TAI'
 

@@ -17,26 +17,9 @@ def read_header(dataset, arpnum, index_col=None):
     Returns:
         header (dataframe): The keywords dataframe. Returns None if no sharp_los found.
     """
-    KEYWORDS_LOS = ['USFLUX', 'MEANGBZ', 'R_VALUE']
-
     if dataset == 'sharp':
-        header = pd.read_csv(os.path.join(DATA_DIR, f'SHARP/header_vec/HARP{arpnum:06d}_ATTRS.csv'),
-                             index_col='T_REC')
-        header[KEYWORDS_LOS] = np.nan
-        header_los_path = os.path.join(DATA_DIR, f'SHARP/header_los/HARP{arpnum:06d}_ATTRS.csv')
-        if not os.path.exists(header_los_path):
-            logging.warning('%s: file not found. Return None.' % header_los_path)
-            return None
-        header_los = pd.read_csv(header_los_path, index_col='T_REC')
-        if not header.index.equals(header_los.index):
-            logging.warning('Header t_recs mismatch: header_los and header of HARP %d' % arpnum)
-        header.update(header_los[KEYWORDS_LOS])
-        if index_col is None:
-            header.reset_index(inplace=True)
-        elif index_col == 'T_REC':
-            pass
-        else:
-            raise
+        header = pd.read_csv(os.path.join(DATA_DIR, f'SHARP/header/HARP{arpnum:06d}_ATTRS.csv'),
+                             index_col=index_col)
     elif dataset == 'smarp':
         header = pd.read_csv(os.path.join(DATA_DIR, f'SMARP/header/TARP{arpnum:06d}_ATTRS.csv'),
                              index_col=index_col)
@@ -66,22 +49,22 @@ def fromRedis(serialized_arr: bytes) -> np.array:
 
 
 def fits_open(filepath):
-    """
-    A wrapper around fits.open to transform SHARP magnetogram to SMARP
+    """A wrapper around fits.open with geometric transformation.
 
-    Resolution: SHARP: CDELT1 = 0.03 (deg), CROTA2 = 0
-                SMARP: CDELT1 = 0.12 (deg), CROTA2 = 0
+    SHARP magnetograms are downsampled to match the SMARP resolution.
+    Value transformation are subject to changes and saved for later.
+
+            Resolution(CDELT1)  Rotation(CROTA2)
+    SHARP   0.03 deg            0 deg
+    SMARP   0.12 deg            0 deg
     """
     data = fits.open(filepath)[1].data
     if 'sharp' in filepath:
         data = data[::4, ::4]
-        k = 1.098679
-        b = -0.462782
-        data = k * data + b
     return data
 
 
-def query(filepaths, redis=True):
+def query_images(filepaths, redis=True):
     """Query FITS image file(s) using filepath(s).
 
     If `redis` is True, a Redis server should be running.
@@ -123,7 +106,7 @@ def query_parameters(prefix, arpnum, t_recs, keywords, redis=True):
 
     Alternative design: replace prefix and arpnum with filepath.
     """
-    KEYWORDS = ['T_REC', 'AREA', 'USFLUX', 'MEANGBZ', 'R_VALUE']
+    KEYWORDS = ['T_REC', 'AREA', 'USFLUXL', 'MEANGBL', 'R_VALUE']
 
     if redis:
         id = f'{prefix}{arpnum:06d}' # header file identifier
@@ -154,5 +137,5 @@ if __name__ == '__main__':
     filepaths = sorted(glob(os.path.join(DATA_DIR, 'SHARP/image/000001/*')))
     filepaths = np.random.permutation(filepaths)[20:]
     for filepath in tqdm(filepaths):
-        data = query(filepath)
+        data = query_images(filepath)
 

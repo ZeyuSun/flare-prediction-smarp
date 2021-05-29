@@ -19,7 +19,7 @@ def plot_all_samples(dfs, names, dataset):
     import plotly.graph_objects as go
     import plotly.express as px
 
-    KEYWORDS = ['USFLUX', 'MEANGBZ', 'R_VALUE', 'AREA', 'FLARE_INDEX']
+    KEYWORDS = ['USFLUXL', 'MEANGBL', 'R_VALUE', 'AREA', 'FLARE_INDEX']
     prefix = 'HARP' if dataset == 'sharp' else 'TARP'
     title = dataset.upper() + ' Keywords'
 

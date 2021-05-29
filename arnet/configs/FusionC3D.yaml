@@ -2,7 +2,7 @@ DATA:
   SEED: 0
   FEATURES: [
     'MAGNETOGRAM',
-    #'USFLUX', 'MEANGBZ', 'R_VALUE', 'AREA',
+    #'USFLUXL', 'MEANGBL', 'R_VALUE', 'AREA',
   ]
   NUM_FRAMES: 16
   HEIGHT: 64

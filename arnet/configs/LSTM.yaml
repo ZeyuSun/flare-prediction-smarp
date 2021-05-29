@@ -1,7 +1,7 @@
 DATA:
   SEED: 0
   FEATURES: [
-    'AREA', 'USFLUX', 'MEANGBZ', 'R_VALUE',
+    'AREA', 'USFLUXL', 'MEANGBL', 'R_VALUE',
   ]
   NUM_FRAMES: 16
   #HEIGHT: 64

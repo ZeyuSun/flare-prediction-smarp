@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 
 
-FEATURES = ['AREA', 'USFLUX', 'MEANGBZ', 'R_VALUE', 'FLARE_INDEX']
+FEATURES = ['AREA', 'USFLUXL', 'MEANGBL', 'R_VALUE', 'FLARE_INDEX']
 #TODO: constants calculated on training set
 PROCESSED_DATA_DIR = '/home/zeyusun/work/flare-prediction-smarp/datasets/preprocessed/M_Q_24hr'
 
