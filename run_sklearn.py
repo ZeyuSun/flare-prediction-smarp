@@ -224,11 +224,11 @@ def sklearn_main(database_dir):
         SGDClassifier,
         #SVC,
         #DecisionTreeClassifier,
-        RandomForestClassifier,
+        #RandomForestClassifier,
         #ExtraTreesClassifier,
         #AdaBoostClassifier,
         #GradientBoostingClassifier,
-        HistGradientBoostingClassifier,
+        #HistGradientBoostingClassifier,
     ]
 
     grids = {
@@ -390,7 +390,7 @@ if __name__ == '__main__':
     parser.add_argument('-a', '--auxdata', default='datasets/sharp2smarp.npy')
     parser.add_argument('-s', '--smoke', action='store_true')
     parser.add_argument('-e', '--experiment_name', default='sklearn')
-    parser.add_argument('-r', '--run_name', default='gamma')
+    parser.add_argument('-r', '--run_name', default='updated_data')
     parser.add_argument('-o', '--output_dir', default='outputs')
     parser.add_argument('--seed', default=0)
     args = parser.parse_args()
