@@ -390,7 +390,7 @@ if __name__ == '__main__':
     parser.add_argument('-a', '--auxdata', default='datasets/sharp2smarp.npy')
     parser.add_argument('-s', '--smoke', action='store_true')
     parser.add_argument('-e', '--experiment_name', default='sklearn')
-    parser.add_argument('-r', '--run_name', default='updated_data')
+    parser.add_argument('-r', '--run_name', default='updated_data_QS')
     parser.add_argument('-o', '--output_dir', default='outputs')
     parser.add_argument('--seed', default=0)
     args = parser.parse_args()
@@ -424,7 +424,7 @@ if __name__ == '__main__':
     with mlflow.start_run(run_name=cfg['run_name']) as run:
         databases = [p for p in Path(cfg['data_root']).iterdir() if p.is_dir()]
         databases = [Path(cfg['data_root']) / d for d in [
-            'M_Q_24hr',
+            'M_QS_24hr',
         ]]
         logging.info(databases)
         for database in databases:
