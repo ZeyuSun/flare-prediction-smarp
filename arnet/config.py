@@ -23,7 +23,7 @@ cfg.DATA.FEATURES = [
     #'FLARE_INDEX',
 ]
 # Input dimensions
-cfg.DATA.NUM_FRAMES = 1
+cfg.DATA.NUM_FRAMES = 16
 cfg.DATA.HEIGHT = 64
 cfg.DATA.WIDTH = 128
 # Dataloader config
@@ -31,7 +31,7 @@ cfg.DATA.BATCH_SIZE = 64
 cfg.DATA.NUM_WORKERS = 8
 cfg.DATA.TRANSFORMS = [
     'Resize', # 'CenterCropPad'
-    'ValueTransform',
+    #'ValueTransform',
     'Standardize',
     #'Reverse',
 ]
