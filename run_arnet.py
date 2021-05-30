@@ -28,8 +28,13 @@ def train(cfg, dm, resume=False):
             mode='max',
         ),
     ]
+    # log_hparams in tensorboard
+    #tb_logger = pl.loggers.TensorBoardLogger(save_dir, default_hp_metric=False)
+    #how to get save_dir before init trainer?
+
     kwargs = cfg.TRAINER.todict()
     kwargs.setdefault('callbacks', []).extend(callbacks)
+    #kwargs['logger'] = tb_logger
     trainer = pl.Trainer(**kwargs)
     if resume:
         learner = Learner.load_from_checkpoint(resume, cfg=cfg)

@@ -57,7 +57,6 @@ def get_dataset_numpy(database, dataset, auxdata, balanced=False, seed=None):
 
     df_train, df_test = get_datasets(database, dataset, auxdata,
                                      sizes=sizes, validation=False, shuffle=True, seed=seed)
-    df_train.to_csv('train0.csv')
     X_train, y_train, g_train = get_dataset_from_df(df_train)
     X_test, y_test, g_test = get_dataset_from_df(df_test)
 
@@ -317,8 +316,8 @@ def sklearn_main(database_dir):
     }
 
     results = []
-    for dataset in ['smarp', 'sharp', 'combined']:
-        for balanced in [True, False]:
+    for dataset in ['smarp', 'sharp', 'fused_smarp', 'fused_sharp']:
+        for balanced in [True]:
             dataset_blc = dataset + '_' + ('balanced' if balanced else 'raw')
             X_train, X_test, y_train, y_test, groups_train, _ = get_dataset_numpy(
                 database_dir, dataset, cfg['auxdata'], balanced=balanced, seed=cfg['seed'])
@@ -354,6 +353,7 @@ def sklearn_main(database_dir):
                     mlflow.set_tag('dataset_name', dataset)
                     mlflow.set_tag('balanced', balanced)
                     mlflow.set_tag('estimator_name', Model.__name__)
+                    #mlflow.set_tag('seed', cfg['seed'])
                     mlflow.log_metrics(scores)
                     #mlflow.sklearn.log_model(best_model, 'mlflow_model')
 
@@ -362,6 +362,7 @@ def sklearn_main(database_dir):
                     'dataset': dataset_blc,
                     'model': Model.__name__,
                     'time': time.time() - t_start,
+                    #'seed': cfg['seed'],
                 }
                 r.update(scores)
                 r.update({
@@ -422,10 +423,9 @@ if __name__ == '__main__':
     mlflow.set_experiment(cfg['experiment_name'])
     with mlflow.start_run(run_name=cfg['run_name']) as run:
         databases = [p for p in Path(cfg['data_root']).iterdir() if p.is_dir()]
-        # databases = [Path(cfg['data_root']) / d for d in [
-        #     'M_Q_24hr',
-        #     #'MX_Q_6hr',
-        # ]]
+        databases = [Path(cfg['data_root']) / d for d in [
+            'M_Q_24hr',
+        ]]
         logging.info(databases)
         for database in databases:
             sklearn_main(database)
