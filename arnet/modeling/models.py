@@ -130,43 +130,53 @@ class SimpleC3D(nn.Module):
         return loss
 
 
-# @MODEL_REGISTRY.register()
-# class MLP(nn.Module):
-#     mode = 'classification'
-#
-#     def __init__(self, cfg):
-#         super().__init__()
-#         self.set_class_weight(cfg)
-#         self.result = {}
-#
-#         self.linear1 = nn.Linear(cfg.DATA.FEATURES))
-#     def set_class_weight(self, cfg):
-#         if cfg.LEARNER.CLASS_WEIGHT is None:
-#             class_weight = [1, 1]
-#         elif cfg.LEARNER.CLASS_WEIGHT == 'balanced':
-#             class_weight = [1 / w for w in cfg.DATA.CLASS_WEIGHT]
-#         else:
-#             class_weight = cfg.LEARNER.CLASS_WEIGHT
-#         self.register_buffer('class_weight', torch.tensor(class_weight, dtype=torch.float))
-#
-#     def forward(self, x):
-#         x, (hn, cn) = self.lstm(x, None)  # x.shape = [N (batch), T (seq), C (channels)]
-#         x = self.linear(x[:, -1, :])
-#         return x
-#
-#     def get_loss(self, batch):
-#         x, target, meta = batch
-#         output = self(x)
-#
-#         log_prob = F.log_softmax(output, dim=-1)
-#         loss = F.nll_loss(log_prob, target, weight=self.class_weight, reduction='mean')
-#
-#         self.result['x'] = x
-#         self.result['meta'] = meta
-#         self.result['y_true'] = target
-#         self.result['y_prob'] = torch.exp(log_prob[:, 1])
-#
-#         return loss
+@MODEL_REGISTRY.register()
+class MLP(nn.Module):
+    mode = 'classification'
+
+    def __init__(self, cfg):
+        super().__init__()
+        self.set_class_weight(cfg)
+        self.result = {}
+
+        linears = OrderedDict()
+        out_prev = len(cfg.DATA.FEATURES)
+        out_dims = [64, 32, 32, 8, 2]
+        for i, out in enumerate(out_dims):
+            linears[f'linear{i+1}'] = nn.Linear(out_prev, out)
+            if i == len(out_dims) - 1:
+                break
+            linears[f'linear_relu{i+1}'] = nn.LeakyReLU()
+            #linears[f'linear_bn{i+1}'] = nn.BatchNorm1d(out)
+            out_prev = out
+        self.linears = nn.Sequential(linears)
+
+    def set_class_weight(self, cfg):
+        if cfg.LEARNER.CLASS_WEIGHT is None:
+            class_weight = [1, 1]
+        elif cfg.LEARNER.CLASS_WEIGHT == 'balanced':
+            class_weight = [1 / w for w in cfg.DATA.CLASS_WEIGHT]
+        else:
+            class_weight = cfg.LEARNER.CLASS_WEIGHT
+        self.register_buffer('class_weight', torch.tensor(class_weight, dtype=torch.float))
+
+    def forward(self, x):
+        x = self.linears(x)
+        return x
+
+    def get_loss(self, batch):
+        x, target, meta = batch
+        output = self(x)
+
+        log_prob = F.log_softmax(output, dim=-1)
+        loss = F.nll_loss(log_prob, target, weight=self.class_weight, reduction='mean')
+
+        self.result['x'] = x
+        self.result['meta'] = meta
+        self.result['y_true'] = target
+        self.result['y_prob'] = torch.exp(log_prob[:, 1])
+
+        return loss
 
 
 @MODEL_REGISTRY.register()

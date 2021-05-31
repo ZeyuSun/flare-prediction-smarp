@@ -15,7 +15,7 @@ LEARNER:
   #LEARNING_RATE: 1e-3
   PATIENCE: 5
   MODEL:
-    NAME: 'SimpleLSTM'
+    NAME: 'MLP'
     #SETTINGS: 'cnn'
 
 TRAINER:
