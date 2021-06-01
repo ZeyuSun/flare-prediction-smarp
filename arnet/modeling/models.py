@@ -166,6 +166,7 @@ class MLP(nn.Module):
 
     def get_loss(self, batch):
         x, target, meta = batch
+        x = x[:,-1]  # x has shape [Batchsize, Depth, Dims] with Depth=1
         output = self(x)
 
         log_prob = F.log_softmax(output, dim=-1)
