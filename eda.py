@@ -52,9 +52,11 @@ def plot_all_samples(dfs, names, dataset):
     return fig
 
 
-def plot_selected_samples(X_train, X_test, y_train, y_test, features, title=None):
+def plot_selected_samples(X_train, X_test, y_train, y_test,
+                          predictions=None, features=None, title=None):
     df_train = pd.DataFrame(X_train, columns=features)
     df_train = df_train.assign(label=y_train)
+    df_train = df_train.assign(pred=predictions['train'])
     df_test = pd.DataFrame(X_test, columns=features)
     df_test = df_test.assign(label=y_test)
     dfs = [df_train, df_test]

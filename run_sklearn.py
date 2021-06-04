@@ -321,13 +321,7 @@ def sklearn_main(database_dir):
             dataset_blc = dataset + '_' + ('balanced' if balanced else 'raw')
             X_train, X_test, y_train, y_test, groups_train, _ = get_dataset_numpy(
                 database_dir, dataset, cfg['auxdata'], balanced=balanced, seed=cfg['seed'])
-            # # Visualize processed train and test splits
-            # from eda import plot_selected_samples
-            # title = database_dir.name + ' ' + dataset_blc
-            # fig = plot_selected_samples(X_train, X_test, y_train, y_test, cfg['features'],
-            #                             title=title)
-            # fig.show()
-            # continue
+            predictions = {}
             for Model in Models:
                 t_start = time.time()
                 param_space = distributions[Model.__name__]
@@ -345,6 +339,10 @@ def sklearn_main(database_dir):
                     print(df.to_markdown(tablefmt='grid'))
 
                     scores = evaluate(X_test, y_test, best_model, save_dir=run_dir)
+                    predictions[Model.__name__] = {
+                        'train': best_model.predict(X_train),
+                        'test': best_model.predict(X_test),
+                    }
 
                     #mlflow.log_param('sampling_strategy', best_model.best_params_['rus__sampling_strategy'])
                     mlflow.log_params({k.replace('model__', ''): v for k, v in
@@ -369,6 +367,16 @@ def sklearn_main(database_dir):
                     'params': dict(best_model.best_params_),
                 })
                 results.append(r)
+
+            # Visualize processed train and test splits
+            from eda import plot_selected_samples
+            title = database_dir.name + ' ' + dataset_blc
+            fig = plot_selected_samples(X_train, X_test, y_train, y_test,
+                                        predictions=predictions,
+                                        features=cfg['features'],
+                                        title=title)
+            fig.write_html(f'outputs/{dataset}_{Model.__name__}')
+            fig.show()
 
     results_df = pd.DataFrame(results)
     save_path = Path(cfg['output_dir']) / f'{database_dir.name}_results.md'
