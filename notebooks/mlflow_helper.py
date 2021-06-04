@@ -79,14 +79,14 @@ def select(runs, columns, rows):
     return runs
 
 
-def organize(runs, columns=None, std=False):
-    columns = columns or ['dataset', 'estimator']
+def organize(runs, by=None, std=False):
+    by = by or ['dataset', 'estimator']
     # sort:
     extract_hours = lambda s: s.str.split('_').str[2].str.replace('hr', '').astype(int)
 
     if std:
         df = (runs
-            .groupby(columns)
+            .groupby(by)
             .agg(lambda s: ufloat(s.mean(), s.std())) #['mean', 'std'])
             .unstack(-1).T
             #.sort_values('database', axis=1, key=extract_hours)
@@ -95,7 +95,7 @@ def organize(runs, columns=None, std=False):
         )
     else:
         df = (runs
-            .groupby(columns)
+            .groupby(by)
             .agg('mean')
             .unstack(-1).T
             #.sort_values('database', axis=1, key=extract_hours)
@@ -105,9 +105,9 @@ def organize(runs, columns=None, std=False):
     return df
 
 
-def style(runs, columns=None):
-    columns = columns or ['dataset', 'estimator']
-    df = organize(runs, columns=columns, std=False)
+def style(runs, by=None):
+    by = by or ['dataset', 'estimator']
+    df = organize(runs, by=by, std=False)
     df_style = (df
             .style
             .background_gradient(axis=None)#, vmin=0.7)
@@ -122,5 +122,5 @@ def typeset(df):
 
 def tensorboard(runs):
     tb = runs['artifact_uri'].str.replace('file://', '') + '/tensorboard'
-    dirs = ','.join([f'{idx}:{tb[idx]}' for idx in tb.index])
+    dirs = ','.join([f"{idx}_{runs.loc[idx, 'tags.dataset_name']}_{runs.loc[idx, 'tags.estimator_name']}:{tb[idx]}" for idx in tb.index])
     return dirs
