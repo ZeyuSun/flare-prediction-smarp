@@ -158,8 +158,8 @@ class CNN_Li2020(nn.Module):
         out_prev = input_shape[0]
         for i, (out, kern, pad, pool) in enumerate(zip(s['out_channels'], s['kernels'], s['paddings'], s['poolings'])):
             convs[f'conv{i + 1}'] = nn.Conv3d(out_prev, out, kern, padding=pad)
-            convs[f'conv_bn{i+1}'] = nn.BatchNorm3d(out)
-            convs[f'conv_relu{i + 1}'] = nn.ReLU()
+            #convs[f'conv_bn{i+1}'] = nn.BatchNorm3d(out)
+            convs[f'conv_relu{i + 1}'] = nn.LeakyReLU()
             convs[f'conv_pool{i + 1}'] = nn.MaxPool3d(pool)
             out_prev = out
         self.convs = nn.Sequential(convs)
@@ -172,9 +172,9 @@ class CNN_Li2020(nn.Module):
             linears[f'linear{i + 1}'] = nn.Linear(out_prev, out)
             if i == len(out_dims) - 1:
                 break
-            #linears[f'linear_relu{i + 1}'] = nn.ReLU()
-            linears[f'linear_bn{i + 1}'] = nn.BatchNorm1d(out)
-            linears[f'linear_dropout{i + 1}'] = nn.Dropout(p=0.5)
+            linears[f'linear_relu{i + 1}'] = nn.LeakyReLU()
+            #linears[f'linear_bn{i + 1}'] = nn.BatchNorm1d(out)
+            #linears[f'linear_dropout{i + 1}'] = nn.Dropout(p=0.5)
             out_prev = out
         self.linears = nn.Sequential(linears)
 

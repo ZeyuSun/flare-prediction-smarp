@@ -22,3 +22,4 @@ LEARNER:
 
 TRAINER:
   max_epochs: 80
+  gpus: [1]
