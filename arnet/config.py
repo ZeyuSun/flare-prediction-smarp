@@ -35,6 +35,10 @@ cfg.DATA.TRANSFORMS = [
     'Standardize',
     #'Reverse',
 ]
+cfg.DATA.SHRINKAGE = 'log'
+cfg.DATA.THRESH = 150
+cfg.DATA.IMAGE_MEAN = 0
+cfg.DATA.IMAGE_STD = 90
 
 cfg.LEARNER = CN()
 cfg.LEARNER.CLASS_WEIGHT = [1, 1] # list or 'balanced', default=None

@@ -129,19 +129,38 @@ class Reverse():
         return tensor[::-1]
 
 
+def calc_stats(hist, bins, func=None):
+    import numpy as np
+    mids = 0.5 * (bins[1:] + bins[:-1])
+    if func is not None:
+        mids = func(torch.tensor(mids)).numpy()
+    mean = np.average(mids, weights=hist)
+    var = np.average((mids - mean) ** 2, weights=hist)
+    std = np.sqrt(var)
+    return mean, std
+
+
 def get_transform_kwargs(name, cfg):
+    import numpy as np
+
     if name == 'CenterCropPad':
         kwargs = {'target_size': (None, cfg.DATA.HEIGHT, cfg.DATA.WIDTH)}
     elif name == 'Resize':
         kwargs = {'target_size': (cfg.DATA.HEIGHT, cfg.DATA.WIDTH)}
     elif name == 'Standardize':
         if 'MAGNETOGRAM' in cfg.DATA.FEATURES:
-            kwargs = {'mean': 0, 'std': 50}
+            hist = np.load('datasets/sharp_hist.npy', allow_pickle=True).item() # TODO: config
+            func = get_transform('ValueTransform', cfg) if 'ValueTransform' in cfg.DATA.TRANSFORMS else None
+            mean, std = calc_stats(hist['hist'], hist['bins'], func=func)
+            cfg.DATA.IMAGE_MEAN, cfg.DATA.IMAGE_STD = float(mean), float(std)
+            kwargs = {'mean': mean, 'std': std}
         else:
             kwargs = {
                 'mean': {k: CONSTANTS['SMARP_MEAN'][k] for k in cfg.DATA.FEATURES},
                 'std': {k: CONSTANTS['SMARP_STD'][k] for k in cfg.DATA.FEATURES},
             }
+    elif name == 'ValueTransform':
+        kwargs = {'shrinkage': cfg.DATA.SHRINKAGE, 'thresh': cfg.DATA.THRESH}
     else:
         kwargs = {}
     return kwargs

@@ -70,17 +70,17 @@ def launch(config, modes, resume, opts):
         cfg.merge_from_file(config)
     cfg.merge_from_list(opts)
     # cfg.freeze()
-    mlflow.log_params(cfg.flatten())
 
+    dm = ActiveRegionDataModule(cfg) # datamodule construction also changes transformation params
+    cfg = dm.set_class_weight(cfg)
+
+    mlflow.log_params(cfg.flatten())
     logger.info(cfg)
     logger.info("{} {} {}".format(
         cfg.DATA.DATABASE,
         config,
         cfg.DATA.DATASET,
     ))
-
-    dm = ActiveRegionDataModule(cfg)
-    cfg = dm.set_class_weight(cfg)
 
     if 'train' in modes:
         logger.info("======== TRAIN ========")
@@ -143,7 +143,7 @@ def sweep():
     parser.add_argument('-c', '--config_root', default='arnet/configs')
     parser.add_argument('-s', '--smoke', action='store_true')
     parser.add_argument('-e', '--experiment_name', default='CNN')
-    parser.add_argument('-r', '--run_name', default='arnet')
+    parser.add_argument('-r', '--run_name', default='tune_CNN')
     parser.add_argument('opts', default=None, nargs=argparse.REMAINDER)
     args = parser.parse_args()
     if args.smoke:
@@ -158,31 +158,41 @@ def sweep():
 
     t_start = time.time()
     databases = [p for p in Path(args.data_root).iterdir() if p.is_dir()]
-    databases = [Path(args.data_root) / d for d in ['M_Q_24hr']]#, 'M_QS_24hr']]
+    databases = [Path(args.data_root) / d for d in ['M_Q_24hr', 'M_QS_24hr']]
     #configs = [c for c in Path(args.config_root).iterdir()]
     configs = [Path('arnet/configs') / f'{c}.yaml' for c in ['CNN']]
     mlflow.set_experiment(args.experiment_name)
     with mlflow.start_run(run_name=args.run_name):
         for database in databases:
             for balanced in [True]:
-                for dataset in ['sharp', 'fused_sharp', 'smarp', 'fused_smarp']:
+                for dataset in ['sharp', 'fused_sharp']:
                     for config in configs:
-                        for seed in range(5):
-                            opts = [
-                                'DATA.DATABASE', database,
-                                'DATA.DATASET', dataset,
-                                'DATA.BALANCED', balanced,
-                                'DATA.SEED', seed,
-                            ]
-                            run_name = '_'.join([database.name, config.stem, dataset])
-                            with mlflow.start_run(run_name=run_name, nested=True):
-                                tt = time.time()
-                                launch(config, 'train|test', False, args.opts + opts)
-                                mlflow.log_metric('time', time.time() - tt)
-                                mlflow.set_tag('database_name', database.name)
-                                mlflow.set_tag('balanced', balanced)
-                                mlflow.set_tag('estimator_name', config.stem)
-                                mlflow.set_tag('dataset_name', dataset)
+                        for trans, shrink, thresh in [
+                            [['Resize', 'Standardize'], None, None],
+                            [['Resize', 'ValueTransform', 'Standardize'], 'log', 50],
+                            [['Resize', 'ValueTransform', 'Standardize'], '1/2', 50],
+                            [['Resize', 'ValueTransform', 'Standardize'], 'log', 150],
+                            [['Resize', 'ValueTransform', 'Standardize'], '1/2', 150],
+                        ]:
+                            for seed in range(3):
+                                opts = [
+                                    'DATA.DATABASE', database,
+                                    'DATA.DATASET', dataset,
+                                    'DATA.BALANCED', balanced,
+                                    'DATA.SEED', seed,
+                                    'DATA.TRANSFORMS', trans,
+                                    'DATA.SHRINKAGE', shrink,
+                                    'DATA.THRESH', thresh,
+                                ]
+                                run_name = '_'.join([database.name, config.stem, dataset])
+                                with mlflow.start_run(run_name=run_name, nested=True):
+                                    tt = time.time()
+                                    launch(config, 'train|test', False, args.opts + opts)
+                                    mlflow.log_metric('time', time.time() - tt)
+                                    mlflow.set_tag('database_name', database.name)
+                                    mlflow.set_tag('balanced', balanced)
+                                    mlflow.set_tag('estimator_name', config.stem)
+                                    mlflow.set_tag('dataset_name', dataset)
 
     print('Run time: {} s'.format(time.time() - t_start))
 
