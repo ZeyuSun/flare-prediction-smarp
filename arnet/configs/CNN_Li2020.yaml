@@ -1,0 +1,24 @@
+DATA:
+  SEED: 0
+  FEATURES: [
+    'MAGNETOGRAM'
+  ]
+  NUM_FRAMES: 1
+  BATCH_SIZE: 64 # original: 16
+  HEIGHT: 128
+  WIDTH: 128
+  TRANSFORMS: [
+    'Resize',
+    'Standardize'
+  ]
+
+LEARNER:
+  CLASS_WEIGHT: 'balanced'
+  LEARNING_RATE: 1e-3
+  PATIENCE: 20
+  MODEL:
+    NAME: 'CNN_Li2020'
+    SETTINGS: 'cnn_li2020'
+
+TRAINER:
+  max_epochs: 80

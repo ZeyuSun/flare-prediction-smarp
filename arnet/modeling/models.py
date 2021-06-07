@@ -34,6 +34,13 @@ SETTINGS = {
         'poolings': [[1, 2, 2], [1, 2, 2], [1, 2, 2]],
         'out_features': [64, 32],
     },
+    'cnn_li2020': {
+        'out_channels': [64, 64, 64, 64, 64],
+        'kernels': [[1, 11, 11], [1, 11, 11], [1, 3, 3], [1, 3, 3], [1, 3, 3]],
+        'paddings': [[0, 5, 5], [0, 5, 5], [0, 1, 1], [0, 1, 1], [0, 1, 1]],
+        'poolings': [[1, 2, 2], [1, 2, 2], [1, 2, 2], [1, 2, 2], [1, 2, 2]],
+        'out_features': [128, 64],
+    },
     'fusion_c3d': {
         'out_channels': [8, 8, 16],  # more channels to compensate for 5 -> 121
         'kernels': [[5, 5, 5], [3, 3, 3], [3, 3, 3]],
@@ -126,6 +133,84 @@ class SimpleC3D(nn.Module):
         self.result['meta'] = meta
         self.result['y_true'] = target
         self.result['y_prob'] = torch.exp(log_prob[:,1])
+
+        return loss
+
+
+@MODEL_REGISTRY.register()
+class CNN_Li2020(nn.Module):
+    mode = 'classification'
+
+    def __init__(self, cfg):
+        """
+        Args:
+            input_shape (tuple): (C,T,H,W)
+        """
+        super().__init__()
+        self.set_class_weight(cfg)
+        self.result = {}
+
+        input_shape = (1, cfg.DATA.NUM_FRAMES, cfg.DATA.HEIGHT, cfg.DATA.WIDTH)
+        s = SETTINGS[cfg.LEARNER.MODEL.SETTINGS].copy()
+
+        # Convolution layers
+        convs = OrderedDict()
+        out_prev = input_shape[0]
+        for i, (out, kern, pad, pool) in enumerate(zip(s['out_channels'], s['kernels'], s['paddings'], s['poolings'])):
+            convs[f'conv{i + 1}'] = nn.Conv3d(out_prev, out, kern, padding=pad)
+            convs[f'conv_bn{i+1}'] = nn.BatchNorm3d(out)
+            convs[f'conv_relu{i + 1}'] = nn.ReLU()
+            convs[f'conv_pool{i + 1}'] = nn.MaxPool3d(pool)
+            out_prev = out
+        self.convs = nn.Sequential(convs)
+
+        # Linear layers
+        linears = OrderedDict()
+        out_prev = self.infer_output_shape(self.convs, input_shape).numel()
+        out_dims = s['out_features'] + [2]
+        for i, out in enumerate(out_dims):
+            linears[f'linear{i + 1}'] = nn.Linear(out_prev, out)
+            if i == len(out_dims) - 1:
+                break
+            #linears[f'linear_relu{i + 1}'] = nn.ReLU()
+            linears[f'linear_bn{i + 1}'] = nn.BatchNorm1d(out)
+            linears[f'linear_dropout{i + 1}'] = nn.Dropout(p=0.5)
+            out_prev = out
+        self.linears = nn.Sequential(linears)
+
+        summary(self, input_shape)
+
+    def set_class_weight(self, cfg):
+        if cfg.LEARNER.CLASS_WEIGHT is None:
+            class_weight = [1, 1]
+        elif cfg.LEARNER.CLASS_WEIGHT == 'balanced':
+            class_weight = [1 / w for w in cfg.DATA.CLASS_WEIGHT]
+        else:
+            class_weight = cfg.LEARNER.CLASS_WEIGHT
+        self.register_buffer('class_weight', torch.tensor(class_weight, dtype=torch.float))
+
+    def infer_output_shape(self, model, input_shape):
+        input = torch.zeros(1, *input_shape)
+        output = model(input)
+        return output.shape[1:]
+
+    def forward(self, x):
+        x = self.convs(x)
+        x = torch.flatten(x, 1)
+        x = self.linears(x)
+        return x
+
+    def get_loss(self, batch):
+        video, size, target, meta = batch
+        output = self(video)
+
+        log_prob = F.log_softmax(output, dim=-1)
+        loss = F.nll_loss(log_prob, target, weight=self.class_weight, reduction='mean')
+
+        self.result['video'] = video
+        self.result['meta'] = meta
+        self.result['y_true'] = target
+        self.result['y_prob'] = torch.exp(log_prob[:, 1])
 
         return loss
 
