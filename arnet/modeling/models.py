@@ -158,7 +158,7 @@ class CNN_Li2020(nn.Module):
         out_prev = input_shape[0]
         for i, (out, kern, pad, pool) in enumerate(zip(s['out_channels'], s['kernels'], s['paddings'], s['poolings'])):
             convs[f'conv{i + 1}'] = nn.Conv3d(out_prev, out, kern, padding=pad)
-            #convs[f'conv_bn{i+1}'] = nn.BatchNorm3d(out)
+            convs[f'conv_bn{i+1}'] = nn.BatchNorm3d(out)
             convs[f'conv_relu{i + 1}'] = nn.LeakyReLU()
             convs[f'conv_pool{i + 1}'] = nn.MaxPool3d(pool)
             out_prev = out
