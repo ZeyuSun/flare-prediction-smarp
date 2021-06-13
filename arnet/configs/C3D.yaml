@@ -4,7 +4,7 @@ DATA:
     'MAGNETOGRAM'
   ]
   NUM_FRAMES: 16
-  HEIGHT: 64
+  HEIGHT: 128
   WIDTH: 128
   TRANSFORMS: [
     'Resize',
@@ -13,11 +13,11 @@ DATA:
 
 LEARNER:
   CLASS_WEIGHT: 'balanced'
-  LEARNING_RATE: 2e-4
-  PATIENCE: 10
+  LEARNING_RATE: 1e-3
+  PATIENCE: 20
   MODEL:
-    NAME: 'SimpleC3D'
+    NAME: 'CNN_Li2020'
     SETTINGS: 'c3d'
 
 TRAINER:
-  max_epochs: 20
+  max_epochs: 80

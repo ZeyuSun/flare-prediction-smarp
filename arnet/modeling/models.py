@@ -14,11 +14,11 @@ MODEL_REGISTRY.__doc__ = """Registry for video modeling."""
 
 SETTINGS = {
     'c3d': {
-        'out_channels': [8, 8, 16], # more channels to compensate for 5 -> 121
-        'kernels': [[5, 5, 5], [3, 3, 3], [3, 3, 3]],
-        'paddings': [[2, 2, 2], [1, 1, 1], [1, 1, 1]],
-        'poolings': [[2, 4, 4], [2, 2, 2], [2, 2, 2]],
-        'out_features': [512, 64, 8],
+        'out_channels': [64, 64, 64, 64, 64], # more channels to compensate for 5 -> 121
+        'kernels': [[5, 11, 11], [3, 5, 5], [3, 3, 3], [3, 3, 3], [3, 3, 3]],
+        'paddings': [[2, 5, 5], [1, 2, 2], [1, 1, 1], [1, 1, 1], [1, 1, 1]],
+        'poolings': [[2, 4, 4], [2, 2, 2], [2, 2, 2], [1, 2, 2], [1, 2, 2]],
+        'out_features': [128, 64, 16],
     },
     'c2d': {
         'out_channels': [4, 8, 16],
@@ -28,11 +28,11 @@ SETTINGS = {
         'out_features': [512, 64, 32],
     },
     'cnn': {
-        'out_channels': [16, 16, 16],
-        'kernels': [[1, 5, 5], [1, 3, 3], [1, 3, 3]],
-        'paddings': [[0, 2, 2], [0, 1, 1], [0, 1, 1]],
-        'poolings': [[1, 2, 2], [1, 2, 2], [1, 2, 2]],
-        'out_features': [64, 32],
+        'out_channels': [64, 64, 64, 64, 64],
+        'kernels': [[1, 11, 11], [1, 5, 5], [1, 3, 3], [1, 3, 3], [1, 3, 3]],
+        'paddings': [[0, 5, 5], [0, 2, 2], [0, 1, 1], [0, 1, 1], [0, 1, 1]],
+        'poolings': [[1, 2, 2], [1, 2, 2], [1, 2, 2], [1, 2, 2], [1, 2, 2]],
+        'out_features': [128, 64, 16],
     },
     'cnn_li2020': {
         'out_channels': [64, 64, 64, 64, 64],

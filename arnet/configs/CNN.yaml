@@ -13,10 +13,10 @@ DATA:
 
 LEARNER:
   CLASS_WEIGHT: 'balanced'
-  #LEARNING_RATE: 1e-3
+  LEARNING_RATE: 1e-3
   PATIENCE: 20
   MODEL:
-    NAME: 'SimpleC3D'
+    NAME: 'CNN_Li2020'
     SETTINGS: 'cnn'
 
 TRAINER:
