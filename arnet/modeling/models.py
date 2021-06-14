@@ -14,10 +14,10 @@ MODEL_REGISTRY.__doc__ = """Registry for video modeling."""
 
 SETTINGS = {
     'c3d': {
-        'out_channels': [64, 64, 64, 64, 64], # more channels to compensate for 5 -> 121
+        'out_channels': [32, 32, 64, 64, 64], # more channels to compensate for 5 -> 121
         'kernels': [[5, 11, 11], [3, 5, 5], [3, 3, 3], [3, 3, 3], [3, 3, 3]],
         'paddings': [[2, 5, 5], [1, 2, 2], [1, 1, 1], [1, 1, 1], [1, 1, 1]],
-        'poolings': [[2, 4, 4], [2, 2, 2], [2, 2, 2], [1, 2, 2], [1, 2, 2]],
+        'poolings': [[2, 4, 4], [2, 2, 2], [1, 2, 2], [1, 2, 2], [1, 2, 2]],
         'out_features': [128, 64, 16],
     },
     'c2d': {
