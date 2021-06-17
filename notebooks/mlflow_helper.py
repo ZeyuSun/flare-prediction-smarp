@@ -37,7 +37,7 @@ def get_columns(name):
     return columns
 
 
-def retrieve(experiment_name, parent_run_name):
+def retrieve(experiment_name, parent_run_name, p=0):
     # Get runs of an experiment
     exp_id = client.get_experiment_by_name(experiment_name).experiment_id
     runs = mlflow.search_runs(exp_id)
@@ -49,12 +49,11 @@ def retrieve(experiment_name, parent_run_name):
         unique_run_names = runs['tags.mlflow.runName'].unique()
         print(f"No parentRunName {parent_run_name} in {unique_run_names}")
         raise
-    elif len(parent_runs) == 1:
-        parentRunId = parent_runs['run_id'].item()
     else:
-        print('Select the first from \n{}'.format(
+        print('Select iloc {} from \n{}'.format(
+            p,
             parent_runs[['start_time', 'tags.mlflow.runName', 'tags.mlflow.source.git.commit']]))
-        parentRunId = parent_runs['run_id'].iloc[0]
+        parentRunId = parent_runs['run_id'].iloc[p]
 
     runs = runs.loc[(runs['tags.mlflow.parentRunId'] == parentRunId) &
                     (runs['status'] == 'FINISHED')]

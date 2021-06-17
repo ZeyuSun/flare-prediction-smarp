@@ -174,14 +174,15 @@ def get_transform(name, cfg):
 
 def test_ValueTransform():
     import matplotlib.pyplot as plt
+    from itertools import product
 
-    thresh = 100
+    threshes = [50, 150]
     xx = torch.linspace(-1500, 1500, 100)
-    shrinks = ['log', '1/2', '1/3']
-    for s in shrinks:
-        label = f'{s} @ {thresh:d}'
-        plt.plot(xx, ValueTransform(shrinkage=s, thresh=thresh)(xx), label=label)
-    plt.plot([-thresh, thresh], [-thresh, thresh], 'o')
+    shrinks = ['log', '1/2']
+    for s, t in product(shrinks, threshes):
+        label = f'{s} @ {t:d}'
+        plt.plot(xx, ValueTransform(shrinkage=s, thresh=t)(xx), label=label)
+    plt.plot([-t, t], [-t, t], 'o')
     plt.legend()
     # plt.axis('equal')
     plt.show()
