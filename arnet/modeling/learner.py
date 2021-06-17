@@ -173,17 +173,18 @@ class Learner(pl.LightningModule):
             return result
 
         elif self.testmode == 'visualize_predictions':
+            video, size, target, meta = batch
             gradcam = utils.GradCAM(self.model,
                                     target_layers=self.cfg.LEARNER.VIS.GRADCAM_LAYERS,
                                     data_mean=0,
                                     data_std=1)
-            x_gradcam, x_scaled, heatmap, output = gradcam(x)
-            loss = self.model.get_loss(output, target)
+            video_gradcam, video_scaled, heatmap, output = gradcam(video)
+            loss = self.model.get_loss(batch)
 
-            self.log_video('visualize/inputs/gradcam_input', x_scaled, normalized=True, step=batch_idx)
-            self.log_video('visualize/inputs/gradcam_mask', heatmap, normalized=True, step=batch_idx)
-            self.log_video('visualize/inputs/gradcam', x_gradcam, normalized=True, step=batch_idx)
-            info = self.log_meta(x, m, self.model.result, model_type=self.model.mode)
+            self.log_video('visualize/inputs/gradcam_input', video_scaled, size=size, normalized=True, step=batch_idx)
+            self.log_video('visualize/inputs/gradcam_mask', heatmap, size=size, normalized=True, step=batch_idx)
+            self.log_video('visualize/inputs/gradcam', video_gradcam, size=size, normalized=True, step=batch_idx)
+            info = self.log_meta(self.model.result, model_type=self.model.mode)
             vid_start_time = pd.to_datetime(info['start_time'], format='%Y%m%d%H%M%S')
             forecast_issuance_time = vid_start_time + timedelta(hours=24)
 
@@ -192,10 +193,11 @@ class Learner(pl.LightningModule):
             return result
 
         elif self.testmode == 'visualize_features':
-            _ = self.model(x)
+            video, size, target, meta = batch
+            _ = self.model(video)
 
-            self.log_video('visualize/inputs/full', x, step=batch_idx)
-            self.log_layer_activations('visualize_features', x, self.cfg.LEARNER.VIS.ACTIVATIONS, step=batch_idx)
+            self.log_video('visualize/inputs/full', video, size=size, step=batch_idx)
+            self.log_layer_activations('visualize_features', video, self.cfg.LEARNER.VIS.ACTIVATIONS, step=batch_idx)
 
     def test_epoch_end(self, outputs):
         if self.testmode == 'test':
@@ -265,7 +267,10 @@ class Learner(pl.LightningModule):
         self.logger.experiment.add_text("batch info", info.to_markdown(), step)
         return info
 
-    def log_video(self, tag, video, normalized=False, step=None):
+    def log_video(self, tag, video, size=None, normalized=False, step=None):
+        from skimage.transform import resize
+        size = np.round(size.detach().cpu().numpy() * [38, 78] + [78, 157]).astype(int)
+
         # video: [N, C, T, H, W]
         if video.shape[0] > 8:
             video = video[:8]
@@ -278,8 +283,10 @@ class Learner(pl.LightningModule):
         vs = video.detach().cpu().numpy()
         for i, v in enumerate(vs):
             for j, image in enumerate(v):
-                mlflow.log_image(image.transpose(1,2,0),
-                                 tag+f'/{i}_{j}.png')
+                image = image.transpose(1,2,0)
+                if size is not None:
+                    image = resize(image, size[i])
+                mlflow.log_image(image, tag+f'/{i}_{j}.png')
 
     def log_layer_activations(self, tag, x, layer_names, step=None):
         step = step or self.global_step

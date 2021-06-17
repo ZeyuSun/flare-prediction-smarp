@@ -187,7 +187,7 @@ class ActiveRegionDataModule(pl.LightningDataModule):
         #     seed=self.cfg.DATA.SEED)
         # self.df_val = self.df_test
 
-        self.df_vis = self.df_test.iloc[:4] #sharp_train.loc[sharp_train['arpnum'] == 377].iloc[0:8:2]
+        self.df_vis = self.df_test.iloc[0:64:4] #sharp_train.loc[sharp_train['arpnum'] == 377].iloc[0:8:2]
 
     def set_class_weight(self, cfg):
         p = self.df_train['label'].mean()

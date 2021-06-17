@@ -92,9 +92,9 @@ def launch(config, modes, resume, opts):
         test(cfg, dm)
 
     #TODO: visualization for LSTM
-    #if 'visualize' in args.modes:
-    #    logger.info("======== VISUALIZE ========")
-    #    visualize(cfg, dm)
+    if 'visualize' in modes:
+        logger.info("======== VISUALIZE ========")
+        visualize(cfg, dm)
 
 
 def main():

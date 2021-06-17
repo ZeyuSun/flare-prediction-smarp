@@ -47,9 +47,9 @@ cfg.LEARNER.CHECKPOINT = "" # path to checkpoint file to read from
 cfg.LEARNER.PATIENCE = 8
 ### For visualization
 cfg.LEARNER.VIS = CN()
-cfg.LEARNER.VIS.GRADCAM_LAYERS = []#['convs.conv3']
-cfg.LEARNER.VIS.ACTIVATIONS = []#['convs.conv3']
-cfg.LEARNER.VIS.HISTOGRAM = []#['convs.conv3', 'linear1']
+cfg.LEARNER.VIS.GRADCAM_LAYERS = ['convs.conv5']
+cfg.LEARNER.VIS.ACTIVATIONS = ['convs.conv1', 'convs.conv2']
+cfg.LEARNER.VIS.HISTOGRAM = ['convs.conv3', 'linears.linear1']
 ### For model
 cfg.LEARNER.MODEL = CN()
 cfg.LEARNER.MODEL.NAME = 'SimpleC3D'
