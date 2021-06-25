@@ -426,7 +426,7 @@ if __name__ == '__main__':
         databases = [p for p in Path(cfg['data_root']).iterdir() if p.is_dir()]
         databases = [Path(cfg['data_root']) / d for d in [
             'M_Q_24hr',
-            'M_QS_24hr',
+            'X_Q_24hr',
         ]]
         logging.info(databases)
         for database in databases:

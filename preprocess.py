@@ -3,7 +3,7 @@ import argparse
 import logging
 from multiprocessing import Pool
 from collections import defaultdict
-from functools import partial
+from functools import partial, total_ordering
 from datetime import datetime, timedelta
 import numpy as np
 import pandas as pd
@@ -31,6 +31,35 @@ def get_image_filepath(dataset, arpnum, t_rec):
         return os.path.join(args.raw_data_dir, f'SMARP/image/{arpnum:06d}/mdi.smarp_cea_96m.{arpnum}.{t_rec}.magnetogram.fits')
     else:
         raise
+
+
+def get_flares(goes, t_start, t_end):
+    flares = goes.loc[(goes['start_time'] >= t_start.strftime(GOES_TIME_FORMAT)) &
+                      (goes['start_time'] <= t_end.strftime(GOES_TIME_FORMAT)),
+                      'goes_class'].tolist()
+    return flares
+
+
+@total_ordering
+class FlareClass(object):
+    """A wrapper for flare class string with correct ordering
+
+    Args:
+        flare_class (str): E.g., 'X12', 'X9.6', 'C3.6'.
+    """
+    def __init__(self, flare_class):
+        self.letter = flare_class[0]
+        self.number = float(flare_class[1:])
+
+    def __eq__(self, other):
+        return self.letter == other.letter and self.number == other.number
+
+    def __lt__(self, other):
+        return (self.letter < other.letter or
+                self.letter == other.letter and self.number < other.number)
+
+    def __repr__(self):
+        return "FlareClass('%s')" % (self.letter + str(self.number))
 
 
 def get_label(flares_observed, flares_future, criterion='M_Q'):
@@ -173,12 +202,8 @@ def select_per_arp(dataset, arpnum,
 
         bad_img_idx = (np.where(df_new['bad_img'])[0] - 16)  # neg idx of bad images
 
-        flares_future = goes_ar.loc[(goes_ar['start_time'] >= t_end.strftime(GOES_TIME_FORMAT)) &
-                                    (goes_ar['start_time'] <= t_future.strftime(GOES_TIME_FORMAT)),
-                                    'goes_class'].tolist()
-        flares_observed = goes_ar.loc[(goes_ar['start_time'] >= t_start.strftime(GOES_TIME_FORMAT)) &
-                                      (goes_ar['start_time'] <= t_end.strftime(GOES_TIME_FORMAT)),
-                                      'goes_class'].tolist()
+        flares_future = get_flares(goes_ar, t_end, t_future)
+        flares_observed = get_flares(goes_ar, t_start, t_end)
         flare_index = get_flare_index(flares_observed)
 
         # (3) Drop the negative sample with large observed flares
@@ -186,6 +211,14 @@ def select_per_arp(dataset, arpnum,
         if label is None:
             counter['obs_pos'] += 1
             continue
+
+        if label:
+            flares_future_12h = get_flares(goes_ar, t_end, t_end + timedelta(hours=12))
+            flares_future_6h = get_flares(goes_ar, t_end, t_end + timedelta(hours=6))
+            max_24h = max(f[0] for f in flares_future_12h)
+            if label is None:
+                counter['obs_pos'] += 1
+                continue
 
         sample = {
             'prefix': get_prefix(dataset),
