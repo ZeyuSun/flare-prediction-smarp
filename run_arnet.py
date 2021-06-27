@@ -142,8 +142,8 @@ def sweep():
     parser.add_argument('-d', '--data_root', default='datasets')
     parser.add_argument('-c', '--config_root', default='arnet/configs')
     parser.add_argument('-s', '--smoke', action='store_true')
-    parser.add_argument('-e', '--experiment_name', default='CNN')
-    parser.add_argument('-r', '--run_name', default='tune_arch')
+    parser.add_argument('-e', '--experiment_name', default='leaderboard3')
+    parser.add_argument('-r', '--run_name', default='LSTM_CNN')
     parser.add_argument('opts', default=None, nargs=argparse.REMAINDER)
     args = parser.parse_args()
     if args.smoke:
@@ -158,14 +158,14 @@ def sweep():
 
     t_start = time.time()
     databases = [p for p in Path(args.data_root).iterdir() if p.is_dir()]
-    databases = [Path(args.data_root) / d for d in ['M_Q_24hr', 'M_QS_24hr']]
+    databases = [Path(args.data_root) / d for d in ['M_Q_24hr']]
     #configs = [c for c in Path(args.config_root).iterdir()]
-    configs = [Path('arnet/configs') / f'{c}.yaml' for c in ['C3D']]
+    configs = [Path('arnet/configs') / f'{c}.yaml' for c in ['LSTM', 'CNN']]
     mlflow.set_experiment(args.experiment_name)
     with mlflow.start_run(run_name=args.run_name):
         for database in databases:
             for balanced in [True]:
-                for dataset in ['sharp', 'fused_sharp']:
+                for dataset in ['sharp', 'fused_sharp', 'smarp', 'fused_smarp']:
                     for config in configs:
                         for seed in range(5):
                             opts = [
