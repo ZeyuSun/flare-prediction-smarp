@@ -149,7 +149,7 @@ def get_transform_kwargs(name, cfg):
         kwargs = {'target_size': (cfg.DATA.HEIGHT, cfg.DATA.WIDTH)}
     elif name == 'Standardize':
         if 'MAGNETOGRAM' in cfg.DATA.FEATURES:
-            hist = np.load('datasets/sharp_hist.npy', allow_pickle=True).item() # TODO: config
+            hist = np.load('/home/zeyusun/work/flare-prediction-smarp/datasets/sharp_hist.npy', allow_pickle=True).item() # TODO: config
             func = get_transform('ValueTransform', cfg) if 'ValueTransform' in cfg.DATA.TRANSFORMS else None
             mean, std = calc_stats(hist['hist'], hist['bins'], func=func)
             cfg.DATA.IMAGE_MEAN, cfg.DATA.IMAGE_STD = float(mean), float(std)

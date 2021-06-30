@@ -190,7 +190,7 @@ class CNN_Li2020(nn.Module):
         self.register_buffer('class_weight', torch.tensor(class_weight, dtype=torch.float))
 
     def infer_output_shape(self, model, input_shape):
-        input = torch.zeros(1, *input_shape)
+        input = torch.zeros(1, *input_shape) # device!
         output = model(input)
         return output.shape[1:]
 

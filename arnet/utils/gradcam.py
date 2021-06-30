@@ -114,7 +114,7 @@ class GradCAM:
             preds = self.model(inputs.clone())
 
             if labels is None:
-                score = torch.max(preds, dim=-1)[0]
+                score = torch.max(preds, dim=-1)[0]  # This works when thresh = 0.5
             else:
                 if labels.ndim == 1:
                     labels = labels.unsqueeze(-1)

@@ -226,6 +226,9 @@ class ActiveRegionDataModule(pl.LightningDataModule):
             raise
         return loader
 
+    def predict_dataloader(self):
+        return self.test_dataloader()
+
 
 if __name__ == '__main__':
     df = pd.read_csv('datasets/M_Q_6hr/sharp.csv')

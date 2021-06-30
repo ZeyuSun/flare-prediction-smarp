@@ -124,7 +124,7 @@ def get_metrics_probabilistic(y_true, y_prob, criterion='tss'):
         'bss': bss,
     })
 
-    return scores, cm
+    return scores, cm, thresh
 
 
 def get_metrics_multiclass(i_true, i_pred):

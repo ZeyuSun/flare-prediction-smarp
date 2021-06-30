@@ -25,6 +25,7 @@ def plot(data, *args, **kwargs):
         plt.colorbar()
     elif data.ndim == 4:
         print('N, C, T, H, W')
+        #TODO:  Show video!
     plt.show()
 
 
@@ -71,3 +72,4 @@ def check(tensor):
 
     if not (nans.any() or infs.any()):
         print('Good tensor!')
+

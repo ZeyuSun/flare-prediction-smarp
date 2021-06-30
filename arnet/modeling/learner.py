@@ -149,7 +149,7 @@ class Learner(pl.LightningModule):
         if self.model.mode == 'classification':
             y_true = torch.cat([out['y_true'] for out in outputs])
             y_prob = torch.cat([out['y_prob'] for out in outputs])
-            scores, cm2 = utils.get_metrics_probabilistic(y_true, y_prob)
+            scores, cm2, _ = utils.get_metrics_probabilistic(y_true, y_prob)
             self.log_scores('validation', scores, step=self.val_curr_epoch) # pp.pprint(scores)
             self.log_cm('validation/cm2', cm2, step=self.val_curr_epoch)
             self.log_eval_plots('validation', y_true, y_prob, step=self.val_curr_epoch)
@@ -206,7 +206,8 @@ class Learner(pl.LightningModule):
             if self.model.mode == 'classification':
                 y_true = torch.cat([out['y_true'] for out in outputs])
                 y_prob = torch.cat([out['y_prob'] for out in outputs])
-                scores, cm2 = utils.get_metrics_probabilistic(y_true, y_prob)
+                scores, cm2, thresh = utils.get_metrics_probabilistic(y_true, y_prob)
+                #self.thresh = thresh
                 logger.info(scores)
                 logger.info(cm2)
                 self.log_scores('test', scores)
@@ -244,6 +245,14 @@ class Learner(pl.LightningModule):
         else:
             raise ValueError
         mlflow.log_artifacts(self.logger.log_dir, 'tensorboard/test')
+
+    def predict_step(self, batch, batch_idx: int , dataloader_idx: int = None):
+        _ = self.model.get_loss(batch)
+        y_prob = self.model.result['y_prob']
+        ###
+        #self.thresh = 0.5
+        ###
+        return y_prob #y_prob >= 0.5 #self.thresh
 
     def configure_optimizers(self):
         return torch.optim.Adam(self.parameters(), lr=self.cfg.LEARNER.LEARNING_RATE)
