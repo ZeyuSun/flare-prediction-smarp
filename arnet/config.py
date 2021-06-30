@@ -57,7 +57,7 @@ cfg.LEARNER.MODEL.SETTINGS = 'c3d'
 
 cfg.TRAINER = CN()
 cfg.TRAINER.distributed_backend = None #"ddp" #None
-cfg.TRAINER.gpus = 1 #2 #AssertionError: Invalid type <class 'NoneType'> for key gpus; valid types = {<class 'float'>,
+cfg.TRAINER.gpus = [1] #2 #AssertionError: Invalid type <class 'NoneType'> for key gpus; valid types = {<class 'float'>,
 # If gpus = 2, can't debug inside training_step, where it shows two outputs and gives a warning: WARNING: your terminal doesn't support cursor position requests (CPR).
 cfg.TRAINER.fast_dev_run = False
 cfg.TRAINER.log_every_n_steps = 1
