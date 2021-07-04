@@ -14,10 +14,10 @@ DATA:
 LEARNER:
   CLASS_WEIGHT: 'balanced'
   LEARNING_RATE: 1e-3
-  PATIENCE: 200
+  PATIENCE: 50
   MODEL:
     NAME: 'CNN_Li2020'
     SETTINGS: 'cnn'
 
 TRAINER:
-  max_epochs: 800
+  max_epochs: 80

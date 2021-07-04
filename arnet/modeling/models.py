@@ -172,7 +172,7 @@ class CNN_Li2020(nn.Module):
             linears[f'linear{i + 1}'] = nn.Linear(out_prev, out)
             if i == len(out_dims) - 1:
                 break
-            linears[f'linear_relu{i + 1}'] = nn.ReLU()
+            #linears[f'linear_relu{i + 1}'] = nn.ReLU()
             linears[f'linear_bn{i + 1}'] = nn.BatchNorm1d(out)
             linears[f'linear_dropout{i + 1}'] = nn.Dropout(p=0.5)
             out_prev = out
