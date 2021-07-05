@@ -24,6 +24,7 @@ def train(cfg, dm, resume=False):
         ),
         pl.callbacks.ModelCheckpoint(
             monitor='validation/auc',
+            save_last=True,
             save_top_k=1,
             mode='max',
         ),
@@ -41,7 +42,7 @@ def train(cfg, dm, resume=False):
     else:
         learner = Learner(cfg)
     trainer.fit(learner, datamodule=dm)
-    return trainer.checkpoint_callback.best_model_path
+    return trainer.checkpoint_callback.last_model_path
 
 
 def test(cfg, dm):
@@ -143,7 +144,7 @@ def sweep():
     parser.add_argument('-c', '--config_root', default='arnet/configs')
     parser.add_argument('-s', '--smoke', action='store_true')
     parser.add_argument('-e', '--experiment_name', default='leaderboard3')
-    parser.add_argument('-r', '--run_name', default='CNN_more_epochs')
+    parser.add_argument('-r', '--run_name', default='CNN_last_model_path')
     parser.add_argument('opts', default=None, nargs=argparse.REMAINDER)
     args = parser.parse_args()
     if args.smoke:
