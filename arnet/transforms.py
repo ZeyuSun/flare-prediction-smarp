@@ -1,6 +1,7 @@
 import math
 import torch
 import torch.nn.functional as F
+from torchvision.transforms import Compose
 from fvcore.common.registry import Registry
 
 from arnet.constants import CONSTANTS # run in the flare-
@@ -10,8 +11,13 @@ TRANSFORM_REGISTRY = Registry("TRANSFORM")
 TRANSFORM_REGISTRY.__doc__ = """Registry for input transforms."""
 
 
+class BaseTransform():
+    def fit(self, df_train):
+        return self
+
+
 @TRANSFORM_REGISTRY.register()
-class CenterCropPad():
+class CenterCropPad(BaseTransform):
     """Center cropping and zero padding a 3D tensor to a target size.
 
     If both `crop` and `pad` are true, then the output size is exactly `target_size`.
@@ -54,7 +60,7 @@ class CenterCropPad():
 
 
 @TRANSFORM_REGISTRY.register()
-class Resize():
+class Resize(BaseTransform):
     """Take a video of C x T x H x W and resize spatial dimension.
 
     Args:
@@ -80,7 +86,7 @@ class Resize():
 
 
 @TRANSFORM_REGISTRY.register()
-class ValueTransform():
+class ValueTransform(BaseTransform):
     def __init__(self, shrinkage='1/2', thresh=236):
         """
         Args:
@@ -110,10 +116,23 @@ class ValueTransform():
 
 
 @TRANSFORM_REGISTRY.register()
-class Standardize():
-    def __init__(self, mean=0, std=50):
-        self.mean = mean
-        self.std = std
+class Standardize(BaseTransform):
+    def __init__(self, features):
+        self.features = features
+
+    def fit(self, df_train):
+        if 'MAGNETOGRAM' in self.features:
+            N = (df_train['HEIGHT'] * df_train['WIDTH']).sum()
+            self.mean = df_train['SUM'].sum() / N
+            self.std = math.sqrt(df_train['SUM_SQR'].sum() / N
+                                 - self.mean ** 2)
+        else:
+            mean = df_train[self.features].values.mean(axis=0, keepdims=True)
+            std = df_train[self.features].values.std(axis=0, keepdims=True)
+            # Explicit cast is ugly. USFLUXL out of range of half
+            self.mean = torch.tensor(mean).bfloat16()
+            self.std = torch.tensor(std).bfloat16()
+        return self
 
     def __call__(self, tensor):
         tensor = (tensor - self.mean) / self.std
@@ -121,7 +140,7 @@ class Standardize():
 
 
 @TRANSFORM_REGISTRY.register()
-class Reverse():
+class Reverse(BaseTransform):
     def __init__(self):
         pass
 
@@ -129,36 +148,14 @@ class Reverse():
         return tensor[::-1]
 
 
-def calc_stats(hist, bins, func=None):
-    import numpy as np
-    mids = 0.5 * (bins[1:] + bins[:-1])
-    if func is not None:
-        mids = func(torch.tensor(mids)).numpy()
-    mean = np.average(mids, weights=hist)
-    var = np.average((mids - mean) ** 2, weights=hist)
-    std = np.sqrt(var)
-    return mean, std
-
-
-def get_transform_kwargs(name, cfg):
-    import numpy as np
-
+def get_video_transform_kwargs(name, cfg):
     if name == 'CenterCropPad':
         kwargs = {'target_size': (None, cfg.DATA.HEIGHT, cfg.DATA.WIDTH)}
     elif name == 'Resize':
         kwargs = {'target_size': (cfg.DATA.HEIGHT, cfg.DATA.WIDTH)}
     elif name == 'Standardize':
-        if 'MAGNETOGRAM' in cfg.DATA.FEATURES:
-            hist = np.load('/home/zeyusun/work/flare-prediction-smarp/datasets/sharp_hist.npy', allow_pickle=True).item() # TODO: config
-            func = get_transform('ValueTransform', cfg) if 'ValueTransform' in cfg.DATA.TRANSFORMS else None
-            mean, std = calc_stats(hist['hist'], hist['bins'], func=func)
-            cfg.DATA.IMAGE_MEAN, cfg.DATA.IMAGE_STD = float(mean), float(std)
-            kwargs = {'mean': mean, 'std': std}
-        else:
-            kwargs = {
-                'mean': {k: CONSTANTS['SMARP_MEAN'][k] for k in cfg.DATA.FEATURES},
-                'std': {k: CONSTANTS['SMARP_STD'][k] for k in cfg.DATA.FEATURES},
-            }
+        assert 'MAGNETOGRAM' in cfg.DATA.FEATURES
+        kwargs = {'features': ['MAGNETOGRAM']}
     elif name == 'ValueTransform':
         kwargs = {'shrinkage': cfg.DATA.SHRINKAGE, 'thresh': cfg.DATA.THRESH}
     else:
@@ -166,9 +163,31 @@ def get_transform_kwargs(name, cfg):
     return kwargs
 
 
-def get_transform(name, cfg):
-    kwargs = get_transform_kwargs(name, cfg)
+def get_video_transform(name, cfg):
+    kwargs = get_video_transform_kwargs(name, cfg)
     transform = TRANSFORM_REGISTRY.get(name)(**kwargs)
+    return transform
+
+
+def get_transform(cfg, df_train):
+    features = cfg.DATA.FEATURES
+    yield_video = 'MAGNETOGRAM' in features
+    parameters = [f for f in features if f != 'MAGNETOGRAM']
+    yield_parameters = len(parameters) > 0
+
+    video_transforms = [get_video_transform(name, cfg).fit(df_train)
+                        for name in cfg.DATA.TRANSFORMS]
+    video_transform = Compose(video_transforms)
+    size_transform = Standardize(['HEIGHT', 'WIDTH']).fit(df_train)
+    parameters_transform = Standardize(parameters).fit(df_train)
+    def transform(data_list): # dataset.transform gives a function. Can't inspect.
+        output_list = []
+        if yield_video:
+            output_list.append(video_transform(data_list.pop(0))) # video
+            output_list.append(size_transform(data_list.pop(0))) # size
+        if yield_parameters:
+            output_list.append(parameters_transform(data_list.pop(0))) # parameters
+        return  output_list
     return transform
 
 

@@ -82,7 +82,7 @@ def get_datasets(database, dataset, auxdata,
     if validation:
         df_train, df_val = group_split_data(df_train, seed=seed)
 
-    if sizes:
+    if sizes: # Why rus after split? Strict ratio; Option to rus only train
         df_train = rus(df_train, sizes=sizes, seed=seed)
         if validation:
             df_val = rus(df_val, sizes=sizes, seed=seed)

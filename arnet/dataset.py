@@ -66,7 +66,7 @@ class ActiveRegionDataset(Dataset):
 
         self.df_sample = df_sample
         self.parameters = [f for f in features if f != 'MAGNETOGRAM']
-        self.yield_videos = 'MAGNETOGRAM' in features
+        self.yield_video = 'MAGNETOGRAM' in features
         self.yield_parameters = len(self.parameters) > 0
         self.num_frames = num_frames
         self.transform = transform
@@ -79,12 +79,15 @@ class ActiveRegionDataset(Dataset):
 
         # data
         data_list = []
-        if self.yield_videos:
+        if self.yield_video:
             video, size = self.load_video(s['prefix'], s['arpnum'], s['t_end'], s['bad_img_idx'])
             data_list.append(video)
             data_list.append(size)
         if self.yield_parameters:
-            data_list.append(self.load_parameters(s['prefix'], s['arpnum'], s['t_end']))
+            parameters = self.load_parameters(s['prefix'], s['arpnum'], s['t_end'])
+            data_list.append(parameters)
+        if self.transform:
+            data_list = self.transform(data_list)
 
         # label
         label = int(s['label'])
@@ -108,10 +111,6 @@ class ActiveRegionDataset(Dataset):
         video = torch.from_numpy(video)
         video = torch.unsqueeze(video, 0) # C,T,H,W
         size = torch.tensor(video.shape[-2:], dtype=torch.float) # convert to tensor, otherwise batching gives list not tensor
-        size -= torch.tensor([78, 157])
-        size /= torch.tensor([38, 78])
-        if self.transform:
-            video = self.transform(video)
         return video, size
 
     def load_parameters(self, prefix, arpnum, t_end):
@@ -126,24 +125,8 @@ class ActiveRegionDataset(Dataset):
         #    print(df)
         #    breakpoint()
 
-        #if self.transform:
-        #    df = self.transform(df)
-        df = self.standardize(df, prefix)
         sequence = torch.tensor(df.to_numpy(), dtype=torch.float32) # float16 causes error, lstm is 32bit
         return sequence
-        #sequence = standardize(prefix, sequence).astype(np.float32)
-
-    def standardize(self, df, prefix):
-        if prefix == 'HARP':
-            dataset = 'SHARP'
-        elif prefix == 'TARP':
-            dataset = 'SMARP'
-        else:
-            raise
-        mean = [v for k, v in CONSTANTS[dataset + '_MEAN'].items() if k in self.parameters]
-        std = [v for k, v in CONSTANTS[dataset + '_STD'].items() if k in self.parameters]
-        df[self.parameters] = (df.values - mean) / std  # runtime: arr - arr < df - arr
-        return df
 
 
 class ActiveRegionDataModule(pl.LightningDataModule):
@@ -154,26 +137,19 @@ class ActiveRegionDataModule(pl.LightningDataModule):
     def __init__(self, cfg):
         super().__init__()
         self.cfg = cfg
-        self._construct_transforms()
         self._construct_datasets(balanced=cfg.DATA.BALANCED)
+        self._construct_transforms()
         self.testmode = 'test'
 
     def _construct_transforms(self):
-        transforms = [get_transform(name, self.cfg)
-                      for name in self.cfg.DATA.TRANSFORMS]
-        self.transform = Compose(transforms)
+        self.transform = get_transform(self.cfg, self.df_train)
 
     def _construct_datasets(self, balanced=True):
-        if self.cfg.DATA.BALANCED:
-            sizes = 'balanced'
-        else:
-            sizes = None
-
         self.df_train, self.df_val, self.df_test = get_datasets(
             self.cfg.DATA.DATABASE,
             self.cfg.DATA.DATASET,
             self.cfg.DATA.AUXDATA,
-            sizes=sizes,
+            sizes='balanced' if self.cfg.DATA.BALANCED else None,
             validation=True,
             seed=self.cfg.DATA.SEED)
 
@@ -182,7 +158,7 @@ class ActiveRegionDataModule(pl.LightningDataModule):
         #     self.cfg.DATA.DATABASE,
         #     self.cfg.DATA.DATASET,
         #     self.cfg.DATA.AUXDATA,
-        #     sizes=sizes,
+        #     sizes='balanced' if self.cfg.DATA.BALANCED else None,
         #     validation=False,
         #     seed=self.cfg.DATA.SEED)
         # self.df_val = self.df_test
