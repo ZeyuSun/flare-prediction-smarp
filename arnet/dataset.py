@@ -12,7 +12,6 @@ import pytorch_lightning as pl
 from arnet.fusion import get_datasets
 from arnet.transforms import get_transform
 from arnet.utils import query_images, query_parameters, read_header
-from arnet.constants import CONSTANTS
 
 
 DATA_DIRS = {

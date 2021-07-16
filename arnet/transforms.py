@@ -4,8 +4,6 @@ import torch.nn.functional as F
 from torchvision.transforms import Compose
 from fvcore.common.registry import Registry
 
-from arnet.constants import CONSTANTS # run in the flare-
-
 
 TRANSFORM_REGISTRY = Registry("TRANSFORM")
 TRANSFORM_REGISTRY.__doc__ = """Registry for input transforms."""
