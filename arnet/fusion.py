@@ -30,6 +30,14 @@ def group_split_data(df, seed=None):
     return df.iloc[train_idx], df.iloc[test_idx]
 
 
+def group_split_data_cv(df, cv=5):
+    # GroupKFold is not random
+    from sklearn.model_selection import GroupKFold
+    splitter = GroupKFold(n_splits=cv)
+    for train_idx, test_idx in splitter.split(df, groups=df['arpnum']):
+        yield df.iloc[train_idx], df.iloc[test_idx]
+
+
 def rus(df, sizes='balanced', seed=False):
     """Random Undersampling
 
@@ -52,14 +60,20 @@ def rus(df, sizes='balanced', seed=False):
     ))
     idx = np.sort(idx)
     df = df.iloc[idx].reset_index(drop=True)
+    #TODO: why bother reset index when split and shuffle don't
     return df
 
 
 def get_datasets(database, dataset, auxdata,
-                 sizes=None, validation=False, shuffle=False, seed=None):
+                 sizes=None, validation=0, shuffle=False, seed=None):
     """
     Args:
         sizes: Dict of desired class sizes. None: no rus. 'balanced': balanced rus.
+        validation (int): 0 means no validation, 1 means a hold-out validation.
+            >=2 means cross-validation.
+        shuffle: only meaningful for train split.
+    Note:
+        index is not to be trusted. RUS resets but others ops don't.
     """
     df_smarp = load_csv_dataset(Path(database) / 'smarp.csv')
     df_sharp = load_csv_dataset(Path(database) / 'sharp.csv')
@@ -79,19 +93,47 @@ def get_datasets(database, dataset, auxdata,
     elif dataset == 'smarp':
         df_train, df_test = group_split_data(df_smarp, seed=seed)
 
-    if validation:
+    if validation == 1:
         df_train, df_val = group_split_data(df_train, seed=seed)
+    elif validation > 1:
+        cv_splits = group_split_data_cv(df_train, cv=validation)
 
-    if sizes: # Why rus after split? Strict ratio; Option to rus only train
-        df_train = rus(df_train, sizes=sizes, seed=seed)
-        if validation:
-            df_val = rus(df_val, sizes=sizes, seed=seed)
+    if sizes:
+        # Why rus after split? Strict ratio; Option to rus only train;
+        # O.w., GroupKFold starts with starts longest AR after rus. But why would that be a problem?
         df_test = rus(df_test, sizes=sizes, seed=seed)
+        if validation == 0:
+            df_train = rus(df_train, sizes=sizes, seed=seed)
+        elif validation == 1:
+            df_train = rus(df_train, sizes=sizes, seed=seed)
+            df_val = rus(df_val, sizes=sizes, seed=seed)
+        else:
+            cv_splits = (
+                (
+                    rus(df_train, sizes=sizes, seed=seed),
+                    rus(df_val, sizes=sizes, seed=seed),
+                )
+                for  df_train, df_val in cv_splits
+            )
 
     if shuffle:
-        df_train = df_train.sample(frac=1, random_state=seed)
+        if validation <= 1:
+            df_train = df_train.sample(frac=1, random_state=seed)
+        else:
+            cv_splits = (
+                (
+                    df_train.sample(frac=1, random_state=seed),
+                    df_val,
+                )
+                for  df_train, df_val in cv_splits
+            )
 
-    if validation:
+
+    if validation == 0:
+        return df_train, df_test
+    elif validation == 1:
+        #TODO: maybe should return cv_splits and use next() if only one is needed
         return df_train, df_val, df_test
     else:
-        return df_train, df_test
+        return cv_splits, df_test
+

@@ -201,8 +201,52 @@ class ActiveRegionDataModule(pl.LightningDataModule):
             raise
         return loader
 
-    def predict_dataloader(self):
-        return self.test_dataloader()
+    # Doesn't seemed to be used anywhere
+    # def predict_dataloader(self):
+    #     return self.test_dataloader()
+
+
+class CrossValidationDataModule:
+    """Active region DataModule.
+
+    Handles cfg. Load and organize dataframes.
+    """
+    def __init__(self, cfg):
+        #TODO: cfg.DATA.CV = 5
+        self.cfg = cfg
+
+    def get_dataloader(self, df_sample, transform, drop_last=False):
+        dataset = ActiveRegionDataset(df_sample,
+                                      features=self.cfg.DATA.FEATURES,
+                                      num_frames=self.cfg.DATA.NUM_FRAMES,
+                                      transform=transform)
+        dataloader = DataLoader(dataset,
+                                batch_size=self.cfg.DATA.BATCH_SIZE,
+                                shuffle=False,
+                                drop_last=drop_last,
+                                num_workers=self.cfg.DATA.NUM_WORKERS,
+                                pin_memory=True)
+        return dataloader
+
+    def get_splits(self):
+        cv_splits, _ = get_datasets(
+            self.cfg.DATA.DATABASE,
+            self.cfg.DATA.DATASET,
+            self.cfg.DATA.AUXDATA,
+            sizes='balanced' if self.cfg.DATA.BALANCED else None,
+            validation=self.cfg.DATA.CV,
+            seed=self.cfg.DATA.SEED)
+
+        # If you want df_test, construct a ActiveRegionDataModule with same seed
+        # We don't add this feature here because we don't know transform
+        #self.test_loader = self.get_dataloader(df_test, transform, drop_last=True)
+
+        for df_train, df_val in cv_splits:
+            transform = get_transform(self.cfg, df_train)
+            train_loader = self.get_dataloader(df_train, transform, drop_last=True)
+            val_loader = self.get_dataloader(df_val, transform, drop_last=False)
+
+            yield train_loader, val_loader
 
 
 if __name__ == '__main__':

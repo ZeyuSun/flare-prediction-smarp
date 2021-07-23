@@ -17,6 +17,8 @@ cfg.DATA.DATASET = 'sharp'
 cfg.DATA.AUXDATA = '/home/zeyusun/work/flare-prediction-smarp/datasets/sharp2smarp.npy'
 cfg.DATA.BALANCED = True
 cfg.DATA.SEED = None
+cfg.DATA.CV = 5 # this should be in trainer, but pl doesn't support it yet
+# > 1 will activate cv
 cfg.DATA.FEATURES = [
     'MAGNETOGRAM',
     #'AREA', 'USFLUXL', 'MEANGBL', 'R_VALUE',

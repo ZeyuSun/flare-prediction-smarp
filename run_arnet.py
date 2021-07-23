@@ -6,8 +6,9 @@ import mlflow
 import pytorch_lightning as pl
 
 from arnet import utils
-from arnet.dataset import ActiveRegionDataModule
+from arnet.dataset import ActiveRegionDataModule, CrossValidationDataModule
 from arnet.modeling.learner import Learner, build_test_logger
+from arnet.modeling.cv import CrossValidationTrainer
 from arnet.config import cfg
 
 # TODO: calling getLogger repeatedly somehow creates multiple loggers
@@ -36,13 +37,24 @@ def train(cfg, dm, resume=False):
     kwargs = cfg.TRAINER.todict()
     kwargs.setdefault('callbacks', []).extend(callbacks)
     #kwargs['logger'] = tb_logger
-    trainer = pl.Trainer(**kwargs)
-    if resume:
-        learner = Learner.load_from_checkpoint(resume, cfg=cfg)
+
+    if cfg.DATA.CV == 1:
+        trainer = pl.Trainer(**kwargs)
+        if resume:
+            learner = Learner.load_from_checkpoint(resume, cfg=cfg)
+        else:
+            learner = Learner(cfg)
+        trainer.fit(learner, datamodule=dm)
+        return trainer.checkpoint_callback.last_model_path
     else:
-        learner = Learner(cfg)
-    trainer.fit(learner, datamodule=dm)
-    return trainer.checkpoint_callback.last_model_path
+        cv_trainer = CrossValidationTrainer(**kwargs)
+        if resume:
+            learner = Learner.load_from_checkpoint(resume, cfg=cfg)
+        else:
+            learner = Learner(cfg)
+        cv_dm = CrossValidationDataModule(cfg)
+        cv_trainer.fit(learner, cv_dm)
+        return cv_trainer.best_checkpoint_cabac
 
 
 def test(cfg, dm):
