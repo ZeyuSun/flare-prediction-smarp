@@ -74,6 +74,7 @@ def launch(config, modes, resume, opts):
 
     dm = ActiveRegionDataModule(cfg) # datamodule construction also changes transformation params
     cfg = dm.set_class_weight(cfg)
+    dm.cfg.DATA.BATCH_SIZE = cfg.DATA.BATCH_SIZE = len(dm.df_train)
 
     mlflow.log_params(cfg.flatten())
     logger.info(cfg)
@@ -143,8 +144,8 @@ def sweep():
     parser.add_argument('-d', '--data_root', default='datasets')
     parser.add_argument('-c', '--config_root', default='arnet/configs')
     parser.add_argument('-s', '--smoke', action='store_true')
-    parser.add_argument('-e', '--experiment_name', default='leaderboard3')
-    parser.add_argument('-r', '--run_name', default='CNN_last_model_path')
+    parser.add_argument('-e', '--experiment_name', default='CNN')
+    parser.add_argument('-r', '--run_name', default='CNN_single_batch')
     parser.add_argument('opts', default=None, nargs=argparse.REMAINDER)
     args = parser.parse_args()
     if args.smoke:
