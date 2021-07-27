@@ -149,7 +149,7 @@ class Learner(pl.LightningModule):
         if self.model.mode == 'classification':
             y_true = torch.cat([out['y_true'] for out in outputs])
             y_prob = torch.cat([out['y_prob'] for out in outputs])
-            scores, cm2, _ = utils.get_metrics_probabilistic(y_true, y_prob)
+            scores, cm2, _ = utils.get_metrics_probabilistic(y_true, y_prob, criterion=None)
             self.log_scores('validation', scores, step=self.val_curr_epoch) # pp.pprint(scores)
             self.log_cm('validation/cm2', cm2, step=self.val_curr_epoch)
             self.log_eval_plots('validation', y_true, y_prob, step=self.val_curr_epoch)
@@ -206,7 +206,7 @@ class Learner(pl.LightningModule):
             if self.model.mode == 'classification':
                 y_true = torch.cat([out['y_true'] for out in outputs])
                 y_prob = torch.cat([out['y_prob'] for out in outputs])
-                scores, cm2, thresh = utils.get_metrics_probabilistic(y_true, y_prob)
+                scores, cm2, thresh = utils.get_metrics_probabilistic(y_true, y_prob, criterion=None)
                 #self.thresh = thresh
                 logger.info(scores)
                 logger.info(cm2)
