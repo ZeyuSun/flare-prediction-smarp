@@ -52,7 +52,7 @@ def retrieve(experiment_name, parent_run_name, p=0):
     else:
         print('Select iloc {} from \n{}'.format(
             p,
-            parent_runs[['start_time', 'tags.mlflow.runName', 'tags.mlflow.source.git.commit']]))
+            parent_runs[['start_time', 'tags.mlflow.runName']])) #, 'tags.mlflow.source.git.commit']])) # in notebook/, there is not .git/
         parentRunId = parent_runs['run_id'].iloc[p]
 
     runs = runs.loc[(runs['tags.mlflow.parentRunId'] == parentRunId) &
@@ -87,7 +87,8 @@ def organize(runs, by=None, std=False):
         df = (runs
             .groupby(by)
             .agg(lambda s: ufloat(s.mean(), s.std())) #['mean', 'std'])
-            .unstack(-1).T
+            #.unstack(-1)
+            .T
             #.sort_values('database', axis=1, key=extract_hours)
             #.round(4)
             .applymap('{:.3f}'.format)
@@ -96,7 +97,8 @@ def organize(runs, by=None, std=False):
         df = (runs
             .groupby(by)
             .agg('mean')
-            .unstack(-1).T
+            .unstack(-1)
+            .T
             #.sort_values('database', axis=1, key=extract_hours)
             .round(4)
             #.applymap('{:.3f}'.format)
@@ -123,3 +125,33 @@ def tensorboard(runs):
     tb = runs['artifact_uri'].str.replace('file://', '') + '/tensorboard'
     dirs = ','.join([f"{idx}_{runs.loc[idx, 'tags.dataset_name']}_{runs.loc[idx, 'tags.estimator_name']}:{tb[idx]}" for idx in tb.index])
     return dirs
+
+
+def paired_t_test(diff):
+    """
+    Paired t-test: compare diff with mu0 = 0
+    Test on the mean, with variance unknown
+        H0: diff <= mu0 (or diff == mu0)
+        H1: diff > mu0
+
+    Args:
+        diff: 1-dim array of improvement of each subject
+
+    Returns:
+        statistic: The calculated t-statistic.
+        pvalue: p-value
+    """
+    import numpy as np
+    from scipy.stats import t
+
+    mu = np.mean(diff)
+    s = np.std(diff, ddof=1) # sample standard deviation
+    n = len(diff) # sample size
+    statistic = mu * np.sqrt(n) / s
+
+    #alpha = 0.05
+    dof = n - 1
+    #thresh = t.ppf(1-alpha, dof, loc=0, scale=1)
+    pvalue = t.sf(statistic, dof, loc=0, scale=1)
+
+    return statistic, pvalue

@@ -8,6 +8,7 @@ outputs/
 outputs_smoke/
 lightning_logs*
 logs/
+test/
 # output_* will mess up the working directory
 
 # Byte-compiled / optimized / DLL files
