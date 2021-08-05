@@ -42,7 +42,7 @@ def train(cfg, dm, resume=False):
     else:
         learner = Learner(cfg)
     trainer.fit(learner, datamodule=dm)
-    return trainer.checkpoint_callback.last_model_path
+    return trainer.checkpoint_callback.best_model_path
 
 
 def test(cfg, dm):
