@@ -109,6 +109,7 @@ class Learner(pl.LightningModule):
         # Scalar(s)
         self.log('train/loss', loss)
         mlflow.log_metric('train/loss', loss.item(), step=self.global_step)
+        mlflow.log_metric('train/epoch', self.trainer.current_epoch, step=self.global_step)
 
         if self.image:
             # Text
