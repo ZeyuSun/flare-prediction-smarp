@@ -169,21 +169,21 @@ class ActiveRegionDataModule(pl.LightningDataModule):
         cfg.DATA.CLASS_WEIGHT = [1-p, p]
         return cfg
 
-    def get_dataloader(self, df_sample, drop_last=False):
+    def get_dataloader(self, df_sample, shuffle=False, drop_last=False):
         dataset = ActiveRegionDataset(df_sample,
                                       features=self.cfg.DATA.FEATURES,
                                       num_frames=self.cfg.DATA.NUM_FRAMES,
                                       transform=self.transform)
         dataloader = DataLoader(dataset,
                                 batch_size=self.cfg.DATA.BATCH_SIZE,
-                                shuffle=False,
+                                shuffle=shuffle,
                                 drop_last=drop_last,
                                 num_workers=self.cfg.DATA.NUM_WORKERS,
                                 pin_memory=True)
         return dataloader
 
     def train_dataloader(self):
-        loader = self.get_dataloader(self.df_train, drop_last=True)
+        loader = self.get_dataloader(self.df_train, shuffle=True, drop_last=True)
         return loader
 
     def val_dataloader(self):
