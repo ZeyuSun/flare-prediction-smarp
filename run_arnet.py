@@ -89,6 +89,7 @@ def launch(config, modes, resume, opts):
         logger.info("======== TRAIN ========")
         cfg.LEARNER.CHECKPOINT = train(cfg, dm, resume)
         mlflow.set_tag('checkpoint', cfg.LEARNER.CHECKPOINT)
+        logger.info("Checkpoint saved at %s" % cfg.LEARNER.CHECKPOINT)
 
     if 'test' in modes:
         logger.info("======== TEST ========")
