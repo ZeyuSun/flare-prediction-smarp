@@ -174,12 +174,17 @@ class ActiveRegionDataModule(pl.LightningDataModule):
                                       features=self.cfg.DATA.FEATURES,
                                       num_frames=self.cfg.DATA.NUM_FRAMES,
                                       transform=self.transform)
+        #g = torch.Generator()
+        #g.manual_seed(self.cfg.DATA.SEED)
         dataloader = DataLoader(dataset,
                                 batch_size=self.cfg.DATA.BATCH_SIZE,
                                 shuffle=shuffle,
                                 drop_last=drop_last,
                                 num_workers=self.cfg.DATA.NUM_WORKERS,
                                 pin_memory=True)
+                                # Must not be set if use seed_everything(workers=True)
+                                #worker_init_fn=pl.utilities.seed.pl_worker_init_function,
+                                #generator=g)
         return dataloader
 
     def train_dataloader(self):
