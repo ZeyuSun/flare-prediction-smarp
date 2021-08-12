@@ -125,7 +125,7 @@ class Learner(pl.LightningModule):
                 self.log_layer_activations('train features', self.model.result['video'], self.cfg.LEARNER.VIS.ACTIVATIONS)
 
             # Weight histograms
-            if True: #self.global_step in [0] or batch_idx == 0:
+            if batch_idx == 0: #self.global_step in [0] or batch_idx == 0:
                 for layer_name in self.cfg.LEARNER.VIS.HISTOGRAM:
                     self.logger.experiment.add_histogram("weights/{} kernel".format(layer_name),
                         utils.get_layer(self.model, layer_name).weight, self.global_step)

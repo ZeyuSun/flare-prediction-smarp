@@ -17,7 +17,7 @@ LEARNER:
   PATIENCE: 30
   MODEL:
     NAME: 'CNN_Li2020'
-    SETTINGS: 'cnn'
+    SETTINGS: 'cnn_li2020'
 
 TRAINER:
   max_epochs: 80
