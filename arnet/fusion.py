@@ -25,7 +25,7 @@ def fuse_sharp_to_smarp(df, fuse_dict):
 
 def group_split_data(df, seed=None):
     from sklearn.model_selection import GroupShuffleSplit
-    splitter = GroupShuffleSplit(n_splits=1, test_size=0.2, random_state=seed)
+    splitter = GroupShuffleSplit(n_splits=1, test_size=0.25, random_state=seed)
     train_idx, test_idx = next(splitter.split(df, groups=df['arpnum']))
     return df.iloc[train_idx], df.iloc[test_idx]
 
@@ -66,21 +66,18 @@ def get_datasets(database, dataset, auxdata,
     fuse_dict = load_fusion_dataset(Path(auxdata))
     df_sharp = fuse_sharp_to_smarp(df_sharp, fuse_dict)
 
-    if dataset == 'fused_sharp':
-        df_sharp_train, df_sharp_test = group_split_data(df_sharp, seed=seed)
-        df_train = pd.concat((df_smarp, df_sharp_train)).reset_index(drop=True)
-        df_test = df_sharp_test
-    elif dataset == 'fused_smarp':
-        df_smarp_train, df_smarp_test = group_split_data(df_smarp, seed=seed)
-        df_train = pd.concat((df_sharp, df_smarp_train)).reset_index(drop=True)
-        df_test = df_smarp_test
-    elif dataset == 'sharp':
+    if dataset in ['sharp', 'fused_sharp']:
         df_train, df_test = group_split_data(df_sharp, seed=seed)
-    elif dataset == 'smarp':
+        if validation:
+            df_train, df_val = group_split_data(df_train, seed=seed)
+        if dataset == 'fused_sharp':
+            df_train = pd.concat((df_train, df_smarp)).reset_index(drop=True)
+    elif dataset in ['smarp', 'fused_smarp']:
         df_train, df_test = group_split_data(df_smarp, seed=seed)
-
-    if validation:
-        df_train, df_val = group_split_data(df_train, seed=seed)
+        if validation:
+            df_train, df_val = group_split_data(df_train, seed=seed)
+        if dataset == 'fused_smarp':
+            df_train = pd.concat((df_train, df_sharp)).reset_index(drop=True)
 
     if sizes: # Why rus after split? Strict ratio; Option to rus only train
         df_train = rus(df_train, sizes=sizes, seed=seed)
