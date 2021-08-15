@@ -18,13 +18,13 @@ def train(cfg, dm, resume=False):
     pl.utilities.seed.seed_everything(seed=cfg.DATA.SEED, workers=True)
     callbacks = [
         pl.callbacks.early_stopping.EarlyStopping(
-            monitor='validation/auc',
+            monitor='validation/accuracy',
             patience=cfg.LEARNER.PATIENCE,
             mode='max',
             #verbose=True,
         ),
         pl.callbacks.ModelCheckpoint(
-            monitor='validation/auc',
+            monitor='validation/accuracy',
             save_last=True,
             save_top_k=1,
             mode='max',
@@ -147,7 +147,7 @@ def sweep():
     parser.add_argument('-c', '--config_root', default='arnet/configs')
     parser.add_argument('-s', '--smoke', action='store_true')
     parser.add_argument('-e', '--experiment_name', default='leaderboard7')
-    parser.add_argument('-r', '--run_name', default='same_val_quarter')
+    parser.add_argument('-r', '--run_name', default='val_acc')
     parser.add_argument('opts', default=None, nargs=argparse.REMAINDER)
     args = parser.parse_args()
     if args.smoke:
@@ -169,9 +169,9 @@ def sweep():
     with mlflow.start_run(run_name=args.run_name):
         for database in databases:
             for balanced in [True]:
-                for dataset in ['sharp', 'fused_sharp', 'smarp', 'fused_smarp']:
+                for dataset in ['sharp', 'fused_sharp']: #, 'smarp', 'fused_smarp']:
                     for config in configs:
-                        for seed in range(5):
+                        for seed in [2]: #range(5):
                             opts = [
                                 'DATA.DATABASE', database,
                                 'DATA.DATASET', dataset,
