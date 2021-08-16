@@ -1,4 +1,5 @@
 .*.swp
+*.png
 .idea/
 mlruns/
 _archive/
