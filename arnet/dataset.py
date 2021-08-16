@@ -94,7 +94,7 @@ class ActiveRegionDataset(Dataset):
         # meta
         t_end = datetime.strptime(s['t_end'], '%Y-%m-%d %H:%M:%S').strftime('%Y%m%d%H%M%S')
         largest_flare = max(s['flares'].split('|')) #WARNING: X10+
-        meta = f'{s["prefix"]}{s["arpnum"]:06d}_{t_end}_H0_W0_{largest_flare}.npy'
+        meta = f'{idx}_{s["prefix"]}{s["arpnum"]:06d}_{t_end}_H0_W0_{largest_flare}.npy'
         return *data_list, label, meta
 
     def load_video(self, prefix, arpnum, t_end, bad_img_idx):
@@ -164,10 +164,19 @@ class ActiveRegionDataModule(pl.LightningDataModule):
 
         self.df_vis = self.df_test.iloc[0:64:4] #sharp_train.loc[sharp_train['arpnum'] == 377].iloc[0:8:2]
 
+        self.df_val_pred = self.df_val.copy() # to be logged as artifacts
+        self.df_test_pred = self.df_test.copy()
+
     def set_class_weight(self, cfg):
         p = self.df_train['label'].mean()
         cfg.DATA.CLASS_WEIGHT = [1-p, p]
         return cfg
+
+    def fill_prob(self, tag, global_step, probs):
+        if tag == 'validation':
+            self.df_val_pred[f'step-{global_step}'] = probs
+        elif tag == 'test':
+            self.df_test_pred[f'step-{global_step}'] = probs
 
     def get_dataloader(self, df_sample, shuffle=False, drop_last=False):
         dataset = ActiveRegionDataset(df_sample,

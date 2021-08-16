@@ -28,6 +28,7 @@ def train(cfg, dm, resume=False):
             save_last=True,
             save_top_k=1,
             mode='max',
+            #verbose=True,
         ),
     ]
     # log_hparams in tensorboard
@@ -89,6 +90,7 @@ def launch(config, modes, resume, opts):
         logger.info("======== TRAIN ========")
         cfg.LEARNER.CHECKPOINT = train(cfg, dm, resume)
         mlflow.set_tag('checkpoint', cfg.LEARNER.CHECKPOINT)
+        mlflow.log_param('LEARNER.CHECKPOINT', cfg.LEARNER.CHECKPOINT) # update
         logger.info("Checkpoint saved at %s" % cfg.LEARNER.CHECKPOINT)
 
     if 'test' in modes:

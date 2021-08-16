@@ -38,7 +38,6 @@ class Learner(pl.LightningModule):
         self.image = 'MAGNETOGRAM' in cfg.DATA.FEATURES
         self.model = build_model(cfg)
         self.testmode = 'test'
-        self.val_curr_epoch = 0
         self.save_hyperparameters() # write to self.hparams. when save model, they are # responsible for tensorboard hp_metric
 
     def forward(self, *args, **kwargs):
@@ -141,8 +140,6 @@ class Learner(pl.LightningModule):
         return result
 
     def validation_epoch_end(self, outputs):
-        self.val_curr_epoch += 1
-
         avg_val_loss = torch.stack([out['val_loss'] for out in outputs]).mean()
         self.log('validation/loss', avg_val_loss)
         mlflow.log_metric('validation/loss', avg_val_loss.item(), step=self.global_step)
@@ -150,18 +147,19 @@ class Learner(pl.LightningModule):
         if self.model.mode == 'classification':
             y_true = torch.cat([out['y_true'] for out in outputs])
             y_prob = torch.cat([out['y_prob'] for out in outputs])
+            self.trainer.datamodule.fill_prob('validation', self.global_step, y_prob.detach().cpu().numpy())
             scores, cm2, _ = utils.get_metrics_probabilistic(y_true, y_prob, criterion=None)
-            self.log_scores('validation', scores, step=self.val_curr_epoch) # pp.pprint(scores)
-            self.log_cm('validation/cm2', cm2, step=self.val_curr_epoch)
-            self.log_eval_plots('validation', y_true, y_prob, step=self.val_curr_epoch)
+            self.log_scores('validation', scores, step=self.global_step) # pp.pprint(scores)
+            self.log_cm('validation/cm2', cm2, step=self.global_step)
+            self.log_eval_plots('validation', y_true, y_prob, step=self.global_step)
         elif self.model.mode == 'regression':
             i_true = torch.cat([out['i_true'] for out in outputs])
             i_pred = torch.cat([out['i_pred'] for out in outputs])
             scores, cm6, cm2, cmq = utils.get_metrics_multiclass(i_true, i_pred)
-            self.log_scores('validation', scores, step=self.val_curr_epoch)
-            self.log_cm('validation/cm6', cm6, labels=['Q', 'A', 'B', 'C', 'M', 'X'], step=self.val_curr_epoch)
-            self.log_cm('validation/cm2', cm2, step=self.val_curr_epoch)
-            self.log_cm('validation/cmq', cmq, step=self.val_curr_epoch)
+            self.log_scores('validation', scores, step=self.global_step)
+            self.log_cm('validation/cm6', cm6, labels=['Q', 'A', 'B', 'C', 'M', 'X'], step=self.global_step)
+            self.log_cm('validation/cm2', cm2, step=self.global_step)
+            self.log_cm('validation/cmq', cmq, step=self.global_step)
         else:
             raise ValueError
         mlflow.log_artifacts(self.logger.log_dir, 'tensorboard/train_val')
@@ -207,6 +205,7 @@ class Learner(pl.LightningModule):
             if self.model.mode == 'classification':
                 y_true = torch.cat([out['y_true'] for out in outputs])
                 y_prob = torch.cat([out['y_prob'] for out in outputs])
+                self.trainer.datamodule.fill_prob('test', self.global_step, y_prob.detach().cpu().numpy())
                 scores, cm2, thresh = utils.get_metrics_probabilistic(y_true, y_prob, criterion=None)
                 #self.thresh = thresh
                 logger.info(scores)
@@ -257,6 +256,14 @@ class Learner(pl.LightningModule):
 
     def configure_optimizers(self):
         return torch.optim.Adam(self.parameters(), lr=self.cfg.LEARNER.LEARNING_RATE)
+
+    def on_train_end(self):
+        self.trainer.datamodule.df_val_pred.to_csv('outputs/val_pred.csv')
+        mlflow.log_artifact('outputs/val_pred.csv', 'validation/predictions.csv')
+
+    def on_test_end(self):
+        self.trainer.datamodule.df_test_pred.to_csv('outputs/test_pred.csv')
+        mlflow.log_artifact('outputs/test_pred.csv', 'test/predictions.csv')
 
     def log_meta(self, outputs, model_type='classification', step=None):
         video = outputs['video']
