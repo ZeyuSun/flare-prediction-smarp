@@ -66,7 +66,7 @@ class ActiveRegionDataset(Dataset):
 
         self.df_sample = df_sample
         self.parameters = [f for f in features if f != 'MAGNETOGRAM']
-        self.yield_videos = 'MAGNETOGRAM' in features
+        self.yield_video = 'MAGNETOGRAM' in features
         self.yield_parameters = len(self.parameters) > 0
         self.num_frames = num_frames
         self.transform = transform
@@ -79,12 +79,14 @@ class ActiveRegionDataset(Dataset):
 
         # data
         data_list = []
-        if self.yield_videos:
+        if self.yield_video:
             video, size = self.load_video(s['prefix'], s['arpnum'], s['t_end'], s['bad_img_idx'])
             data_list.append(video)
             data_list.append(size)
         if self.yield_parameters:
-            data_list.append(self.load_parameters(s['prefix'], s['arpnum'], s['t_end']))
+            parameters = self.load_parameters(s['prefix'], s['arpnum'], s['t_end'])
+            data_list.append(parameters)
+
 
         # label
         label = int(s['label'])
@@ -92,7 +94,7 @@ class ActiveRegionDataset(Dataset):
         # meta
         t_end = datetime.strptime(s['t_end'], '%Y-%m-%d %H:%M:%S').strftime('%Y%m%d%H%M%S')
         largest_flare = max(s['flares'].split('|')) #WARNING: X10+
-        meta = f'{s["prefix"]}{s["arpnum"]:06d}_{t_end}_H0_W0_{largest_flare}.npy'
+        meta = f'{idx}_{s["prefix"]}{s["arpnum"]:06d}_{t_end}_H0_W0_{largest_flare}.npy'
         return *data_list, label, meta
 
     def load_video(self, prefix, arpnum, t_end, bad_img_idx):
@@ -164,16 +166,11 @@ class ActiveRegionDataModule(pl.LightningDataModule):
         self.transform = Compose(transforms)
 
     def _construct_datasets(self, balanced=True):
-        if self.cfg.DATA.BALANCED:
-            sizes = 'balanced'
-        else:
-            sizes = None
-
         self.df_train, self.df_val, self.df_test = get_datasets(
             self.cfg.DATA.DATABASE,
             self.cfg.DATA.DATASET,
             self.cfg.DATA.AUXDATA,
-            sizes=sizes,
+            sizes='balanced' if self.cfg.DATA.BALANCED else None,
             validation=True,
             seed=self.cfg.DATA.SEED)
 
@@ -189,26 +186,35 @@ class ActiveRegionDataModule(pl.LightningDataModule):
 
         self.df_vis = self.df_test.iloc[0:64:4] #sharp_train.loc[sharp_train['arpnum'] == 377].iloc[0:8:2]
 
+        self.df_val_pred = self.df_val.copy() # to be logged as artifacts
+        self.df_test_pred = self.df_test.copy()
+
     def set_class_weight(self, cfg):
         p = self.df_train['label'].mean()
         cfg.DATA.CLASS_WEIGHT = [1-p, p]
         return cfg
 
-    def get_dataloader(self, df_sample, drop_last=False):
+    def fill_prob(self, tag, global_step, probs):
+        if tag == 'validation':
+            self.df_val_pred[f'step-{global_step}'] = probs
+        elif tag == 'test':
+            self.df_test_pred[f'step-{global_step}'] = probs
+
+    def get_dataloader(self, df_sample, shuffle=False, drop_last=False):
         dataset = ActiveRegionDataset(df_sample,
                                       features=self.cfg.DATA.FEATURES,
                                       num_frames=self.cfg.DATA.NUM_FRAMES,
                                       transform=self.transform)
         dataloader = DataLoader(dataset,
                                 batch_size=self.cfg.DATA.BATCH_SIZE,
-                                shuffle=False,
+                                shuffle=shuffle,
                                 drop_last=drop_last,
                                 num_workers=self.cfg.DATA.NUM_WORKERS,
                                 pin_memory=True)
         return dataloader
 
     def train_dataloader(self):
-        loader = self.get_dataloader(self.df_train, drop_last=True)
+        loader = self.get_dataloader(self.df_train, shuffle=True, drop_last=True)
         return loader
 
     def val_dataloader(self):

@@ -15,6 +15,7 @@ logger = utils.setup_logger('outputs')
 
 
 def train(cfg, dm, resume=False):
+    pl.utilities.seed.seed_everything(seed=cfg.DATA.SEED, workers=True)
     callbacks = [
         pl.callbacks.early_stopping.EarlyStopping(
             monitor='validation/auc',
@@ -26,6 +27,7 @@ def train(cfg, dm, resume=False):
             monitor='validation/auc',
             save_top_k=1,
             mode='max',
+            #verbose=True,
         ),
     ]
     # log_hparams in tensorboard
@@ -40,6 +42,7 @@ def train(cfg, dm, resume=False):
         learner = Learner.load_from_checkpoint(resume, cfg=cfg)
     else:
         learner = Learner(cfg)
+    #trainer.validate(learner, datamodule=dm) # validation prior to training
     trainer.fit(learner, datamodule=dm)
     return trainer.checkpoint_callback.best_model_path
 
@@ -86,6 +89,8 @@ def launch(config, modes, resume, opts):
         logger.info("======== TRAIN ========")
         cfg.LEARNER.CHECKPOINT = train(cfg, dm, resume)
         mlflow.set_tag('checkpoint', cfg.LEARNER.CHECKPOINT)
+        mlflow.log_param('LEARNER.CHECKPOINT', cfg.LEARNER.CHECKPOINT) # update
+        logger.info("Checkpoint saved at %s" % cfg.LEARNER.CHECKPOINT)
 
     if 'test' in modes:
         logger.info("======== TEST ========")
@@ -143,7 +148,7 @@ def sweep():
     parser.add_argument('-c', '--config_root', default='arnet/configs')
     parser.add_argument('-s', '--smoke', action='store_true')
     parser.add_argument('-e', '--experiment_name', default='leaderboard3')
-    parser.add_argument('-r', '--run_name', default='CNN_more_epochs')
+    parser.add_argument('-r', '--run_name', default='base')
     parser.add_argument('opts', default=None, nargs=argparse.REMAINDER)
     args = parser.parse_args()
     if args.smoke:
@@ -158,9 +163,9 @@ def sweep():
 
     t_start = time.time()
     databases = [p for p in Path(args.data_root).iterdir() if p.is_dir()]
-    databases = [Path(args.data_root) / d for d in ['M_Q_24hr']]
+    databases = [Path(args.data_root).absolute() / d for d in ['M_Q_24hr']]
     #configs = [c for c in Path(args.config_root).iterdir()]
-    configs = [Path('arnet/configs') / f'{c}.yaml' for c in ['CNN']]
+    configs = [Path('arnet/configs').absolute() / f'{c}.yaml' for c in ['LSTM', 'CNN']]
     mlflow.set_experiment(args.experiment_name)
     with mlflow.start_run(run_name=args.run_name):
         for database in databases:

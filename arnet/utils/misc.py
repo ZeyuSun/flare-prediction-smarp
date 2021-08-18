@@ -71,6 +71,7 @@ def generate_batch_info_classification(videos, meta, y_true, y_prob):
         'min': np.min(videos, axis=axes), # if videos is tensor, axes is also expected to be
         '98-perc': np.percentile(videos, 98, axis=axes), # tried to convert arg to numpy ndarray
         'max': np.min(videos, axis=axes),
+        'idx': [],
         'harp_num': [],
         'start_time': [],
         'h': [],
@@ -81,11 +82,12 @@ def generate_batch_info_classification(videos, meta, y_true, y_prob):
     }
     for m in meta:
         info = os.path.basename(m).replace(".npy", "").split("_")
-        d['harp_num'].append(int(info[0][4:]))
-        d['start_time'].append(info[1])
-        d['h'].append(int(info[2][1:]))
-        d['w'].append(int(info[3][1:]))
-        d['flare'].append(info[4])
+        d['idx'].append(int(info[0]))
+        d['harp_num'].append(int(info[1][4:]))
+        d['start_time'].append(info[2])
+        d['h'].append(int(info[3][1:]))
+        d['w'].append(int(info[4][1:]))
+        d['flare'].append(info[5])
     df = pd.DataFrame(d)
     return df
 
@@ -112,6 +114,7 @@ def generate_batch_info_regression(videos, meta, i_true, i_hat, q_prob):
         '75-perc': np.percentile(videos, 75, axis=axes),  # tried to convert arg to numpy ndarray
         '98-perc': np.percentile(videos, 98, axis=axes), # tried to convert arg to numpy ndarray
         'max': np.max(videos, axis=axes),
+        'idx': [],
         'harp_num': [],
         'start_time': [],
         'h': [],
@@ -123,11 +126,12 @@ def generate_batch_info_regression(videos, meta, i_true, i_hat, q_prob):
     }
     for m in meta:
         info = os.path.basename(m).replace(".npy", "").split("_")
-        d['harp_num'].append(int(info[0][4:]))
-        d['start_time'].append(info[1])
-        d['h'].append(int(info[2][1:]))
-        d['w'].append(int(info[3][1:]))
-        d['flare'].append(info[4])
+        d['idx'].append(int(info[0]))
+        d['harp_num'].append(int(info[1][4:]))
+        d['start_time'].append(info[2])
+        d['h'].append(int(info[3][1:]))
+        d['w'].append(int(info[4][1:]))
+        d['flare'].append(info[5])
     df = pd.DataFrame(d)
     return df
 

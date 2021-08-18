@@ -128,14 +128,23 @@ def select_per_arp(dataset, arpnum,
 
     # 1st scan: read images and mark if there is nan
     df.loc[:, 'bad_img'] = None
+    df.loc[:, 'HEIGHT'] = None
+    df.loc[:, 'WIDTH'] = None
+    df.loc[:, 'SUM'] = None
+    df.loc[:, 'SUM_SQR'] = None
     # bad image: file missing, nan pixels, or inconsistent sizes.
     shapes = []
     for t_rec in df.index:
         image_file = get_image_filepath(dataset, arpnum, t_rec)
         image_data = query_images(image_file)
         df.loc[t_rec, 'bad_img'] = np.any(np.isnan(image_data))
+        df.loc[t_rec, 'HEIGHT'] = image_data.shape[0]
+        df.loc[t_rec, 'WIDTH'] = image_data.shape[1]
+        df.loc[t_rec, 'SUM'] = np.sum(image_data)
+        df.loc[t_rec, 'SUM_SQR'] = np.sum(image_data ** 2)
         shapes.append(image_data.shape)
 
+    #TODO: check how size consistency are violated
     # Check image size consistency
     hs, ws = zip(*shapes)
     for ss in [hs, ws]:
@@ -195,6 +204,10 @@ def select_per_arp(dataset, arpnum,
             'label': label,
             'flares': '|'.join(flares_future),
             'bad_img_idx': bad_img_idx,
+            'HEIGHT': df_new['HEIGHT'].iloc[-1],
+            'WIDTH': df_new['WIDTH'].iloc[-1],
+            'SUM': df_new['SUM'].iloc[-1],
+            'SUM_SQR': df_new['SUM_SQR'].iloc[-1],
             'FLARE_INDEX': flare_index,
         }
         sample.update({k: df_new[k].iloc[-1] for k in KEYWORDS})
