@@ -195,10 +195,10 @@ class ActiveRegionDataModule(pl.LightningDataModule):
         return cfg
 
     def fill_prob(self, tag, global_step, probs):
-        if tag == 'validation':
-            self.df_val_pred[f'step-{global_step}'] = probs
-        elif tag == 'test':
-            self.df_test_pred[f'step-{global_step}'] = probs
+        import numpy as np
+        df = {'validation': self.df_val_pred, 'test': self.df_test_pred}[tag] # alias
+        probs = [probs[i] if i < len(probs) else np.nan for i in range(len(df))]
+        df[f'step-{global_step}'] = probs
 
     def get_dataloader(self, df_sample, shuffle=False, drop_last=False):
         dataset = ActiveRegionDataset(df_sample,
