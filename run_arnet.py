@@ -77,7 +77,9 @@ def launch(config, modes, resume, opts):
     dm = ActiveRegionDataModule(cfg) # datamodule construction also changes transformation params
     cfg = dm.set_class_weight(cfg)
 
-    mlflow.log_params(cfg.flatten())
+    mlflow.log_params({key: val
+                       for key, val in cfg.flatten().items()
+                       if key != 'LEARNER.CHECKPOINT'})
     logger.info(cfg)
     logger.info("{} {} {}".format(
         cfg.DATA.DATABASE,
