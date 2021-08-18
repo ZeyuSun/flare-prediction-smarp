@@ -75,6 +75,19 @@ def fig2rgb(fig):
 
     return image
 
+def draw_conv2d_weight(weight):
+    # Conv3d weight has shape (64, 1, 1, 11, 11)
+    filters = weight.detach().cpu().numpy()
+    n = int(np.ceil(np.sqrt(len(filters))))
+    fig = plt.figure(figsize=(10,10))
+    for i in range(n):
+        for j in range(n):
+            plt.subplot(n, n, i*n+j+1)
+            plt.imshow(filters[i*n+j, 0, 0, :, :], cmap='gray')
+            plt.axis('off')
+    plt.close()
+    return fig
+
 def draw_confusion_matrix(matrix, labels=None):
     from itertools import product
 

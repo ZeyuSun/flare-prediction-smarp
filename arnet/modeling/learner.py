@@ -119,6 +119,10 @@ class Learner(pl.LightningModule):
             if False: #self.global_step in [0] or batch_idx == 0:
                 self.log_video('train/inputs', x)
 
+            # Layer weight
+            if self.current_epoch == 0 and batch_idx in [0, 1, 2, 5, 10, 20, 50, 100]:
+                self.log_layer_weights('weight', ['convs.conv1'])
+
             # Middle layer features
             if False: #self.global_step in [0] or batch_idx == 0:
                 self.log_layer_activations('train features', self.model.result['video'], self.cfg.LEARNER.VIS.ACTIVATIONS)
@@ -143,6 +147,10 @@ class Learner(pl.LightningModule):
         avg_val_loss = torch.stack([out['val_loss'] for out in outputs]).mean()
         self.log('validation/loss', avg_val_loss)
         mlflow.log_metric('validation/loss', avg_val_loss.item(), step=self.global_step)
+
+        if True:
+            step = -1 if self.global_step == 0 else None # before training
+            self.log_layer_weights('weight', ['convs.conv1'], step=step)
 
         if self.model.mode == 'classification':
             y_true = torch.cat([out['y_true'] for out in outputs])
@@ -304,6 +312,19 @@ class Learner(pl.LightningModule):
                 if size is not None:
                     image = resize(image, size[i])
                 mlflow.log_image(image, tag+f'/{i}_{j}.png')
+
+    def log_layer_weights(self, tag, layer_names, step=None):
+        step = step or self.global_step
+        from arnet.modeling.models import MODEL_REGISTRY
+        if isinstance(self.model, MODEL_REGISTRY.get('CNN_Li2020')):
+            for layer_name in layer_names:
+                layer = utils.get_layer(self.model, layer_name)
+                if isinstance(layer, torch.nn.Conv3d):
+                    fig = utils.draw_conv2d_weight(layer.weight)
+                    image_tensor = utils.fig2rgb(fig)
+                    save_name = tag + f'/{layer_name}_weight_{step}'
+                    self.logger.experiment.add_image(save_name, image_tensor, step)
+                    mlflow.log_figure(fig, save_name + '.png')
 
     def log_layer_activations(self, tag, x, layer_names, step=None):
         step = step or self.global_step
