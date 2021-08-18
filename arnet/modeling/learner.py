@@ -336,7 +336,7 @@ class Learner(pl.LightningModule):
         fig = utils.draw_confusion_matrix(cm.cpu())
         image_tensor = utils.fig2rgb(fig)
         self.logger.experiment.add_image(tag, image_tensor, step)
-        mlflow.log_figure(fig, tag + '/confusion_matrix.png')
+        mlflow.log_figure(fig, tag + f'/confusion_matrix_{step}.png')
 
     def log_eval_plots(self, tag, y_true, y_prob, step=None):
         y_true = y_true.detach().cpu()
@@ -344,16 +344,16 @@ class Learner(pl.LightningModule):
         step = step or self.global_step
 
         reliability = utils.draw_reliability_plot(y_true, y_prob, n_bins=10)
-        mlflow.log_figure(reliability, tag + '/reliability.png')
+        mlflow.log_figure(reliability, tag + f'/reliability_{step}.png')
         reliability = utils.fig2rgb(reliability)
         self.logger.experiment.add_image(tag + '/reliability', reliability, step)
 
         roc = utils.draw_roc(y_true, y_prob)
-        mlflow.log_figure(roc, tag + '/roc.png')
+        mlflow.log_figure(roc, tag + f'/roc_{step}.png')
         roc = utils.fig2rgb(roc)
         self.logger.experiment.add_image(tag + '/roc', roc, step)
 
         ssp = utils.draw_ssp(y_true, y_prob)
-        mlflow.log_figure(ssp, tag + '/ssp.png')
+        mlflow.log_figure(ssp, tag + f'/ssp_{step}.png')
         ssp = utils.fig2rgb(ssp)
         self.logger.experiment.add_image(tag + '/ssp', ssp, step)

@@ -42,7 +42,7 @@ def train(cfg, dm, resume=False):
         learner = Learner.load_from_checkpoint(resume, cfg=cfg)
     else:
         learner = Learner(cfg)
-    #trainer.validate(learner, datamodule=dm) # validation prior to training
+    trainer.validate(learner, datamodule=dm) # mlflow log before training
     trainer.fit(learner, datamodule=dm)
     return trainer.checkpoint_callback.best_model_path
 
