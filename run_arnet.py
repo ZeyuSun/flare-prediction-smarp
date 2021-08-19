@@ -29,6 +29,11 @@ def train(cfg, dm, resume=False):
             mode='max',
             #verbose=True,
         ),
+        pl.callbacks.LearningRateMonitor(
+            logging_interval=None,
+            log_momentum=True,
+        ),
+        #pl.callbacks.ModelPruning("l1_unstructured", amount=0.5),
     ]
     # log_hparams in tensorboard
     #tb_logger = pl.loggers.TensorBoardLogger(save_dir, default_hp_metric=False)
