@@ -100,7 +100,7 @@ class SimpleC3D(nn.Module):
             out_prev = out
         self.linears = nn.Sequential(linears)
 
-        summary(self, input_shape)
+        #summary(self, input_shape)
 
     def set_class_weight(self, cfg):
         if cfg.LEARNER.CLASS_WEIGHT is None:
@@ -178,7 +178,7 @@ class CNN_Li2020(nn.Module):
             out_prev = out
         self.linears = nn.Sequential(linears)
 
-        summary(self, input_shape)
+        #summary(self, input_shape)
 
     def set_class_weight(self, cfg):
         if cfg.LEARNER.CLASS_WEIGHT is None:
@@ -367,7 +367,7 @@ class FusionNet(nn.Module):
             out_prev = out
         self.fused = nn.Sequential(fused)
 
-        summary(self, [input_shape, (2,)])
+        #summary(self, [input_shape, (2,)])
 
     def set_class_weight(self, cfg):
         if cfg.LEARNER.CLASS_WEIGHT is None:
