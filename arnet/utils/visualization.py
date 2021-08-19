@@ -75,17 +75,18 @@ def fig2rgb(fig):
 
     return image
 
-def draw_conv2d_weight(weight):
+def draw_conv2d_weight(weight, vmin=None, vmax=None):
     import matplotlib as mpl
 
     # Conv3d weight has shape (64, 1, 1, 11, 11)
     filters = weight.detach().cpu().numpy()
     n = int(np.ceil(np.sqrt(len(filters))))
-    vmin, vmax = filters.min(), filters.max()
+    vmin = vmin or filters.min()
+    vmax = vmax or filters.max()
 
     widths = [3] * n + [0.4]
     heights = [3] * n
-    fig = plt.figure(figsize=(11,10))
+    fig = plt.figure(figsize=(10,10))
     gs = mpl.gridspec.GridSpec(ncols=len(widths), nrows=len(heights), figure=fig,
                                width_ratios=widths, height_ratios=heights)
     gs.update(wspace=0.05, hspace=0.05)
@@ -98,7 +99,7 @@ def draw_conv2d_weight(weight):
     ax = fig.add_subplot(gs[:,-1])
     norm = mpl.colors.Normalize(vmin=vmin, vmax=vmax)
     cb = mpl.colorbar.ColorbarBase(ax, cmap=plt.get_cmap('gray'), norm=norm)
-    #plt.tight_layout() # this figure includes Axes that are not compatible with tight_layout, so results might be incorrect.
+    #gs.tight_layout(fig)
     plt.close()
     return fig
 

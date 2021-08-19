@@ -316,15 +316,21 @@ class Learner(pl.LightningModule):
     def log_layer_weights(self, tag, layer_names, step=None):
         step = step or self.global_step
         from arnet.modeling.models import MODEL_REGISTRY
-        if isinstance(self.model, MODEL_REGISTRY.get('CNN_Li2020')):
-            for layer_name in layer_names:
-                layer = utils.get_layer(self.model, layer_name)
-                if isinstance(layer, torch.nn.Conv3d):
-                    fig = utils.draw_conv2d_weight(layer.weight)
-                    image_tensor = utils.fig2rgb(fig)
-                    save_name = tag + f'/{layer_name}_weight_{step}'
-                    self.logger.experiment.add_image(save_name, image_tensor, step)
-                    mlflow.log_figure(fig, save_name + '.png')
+        #if isinstance(self.model, MODEL_REGISTRY.get('CNN_Li2020')):
+        for layer_name in layer_names:
+            layer = utils.get_layer(self.model, layer_name)
+            if isinstance(layer, torch.nn.Conv3d):
+                fig = utils.draw_conv2d_weight(layer.weight)
+                image_tensor = utils.fig2rgb(fig)
+                save_name = tag + f'/{layer_name}_weight_{step}'
+                self.logger.experiment.add_image(save_name, image_tensor, step)
+                mlflow.log_figure(fig, save_name + '.png')
+                # Set vmin vmax
+                fig = utils.draw_conv2d_weight(layer.weight, vmin=-1, vmax=1)
+                image_tensor = utils.fig2rgb(fig)
+                save_name = tag + f'/uniform_scaled/{layer_name}_weight_{step}'
+                self.logger.experiment.add_image(save_name, image_tensor, step)
+                mlflow.log_figure(fig, save_name + '.png')
 
     def log_layer_activations(self, tag, x, layer_names, step=None):
         step = step or self.global_step
