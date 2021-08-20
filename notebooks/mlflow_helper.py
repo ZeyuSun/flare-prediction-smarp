@@ -7,33 +7,17 @@ client = MlflowClient()
 
 
 def get_columns(name):
-    tags = {
-        #'tags.database_name': 'database',
+    columns = {
+        'tags.database_name': 'database',
         'tags.dataset_name': 'dataset',
-        #'tags.balanced': 'balanced',
         'tags.estimator_name': 'estimator',
-        #'tags.seed': 'seed',
+        'params.DATA.SEED': 'seed',
+        'metrics.test/accuracy': 'ACC',
+        'metrics.test/auc': 'AUC',
+        'metrics.test/tss': 'TSS',
+        'metrics.test/hss2': 'HSS',
+        'metrics.test/bss': 'BSS',
     }
-    if name == 'arnet':
-        metrics = {'metrics.test/' + m: m.upper() for m in [
-            'auc',
-            'tss',
-            #'hss2',
-            #'precision',
-            #'recall',
-        ]}
-    elif name == 'sklearn':
-        metrics = {'metrics.' + m: new_m.upper() for m, new_m in [
-            ['auc', 'auc'],
-            ['tss_opt', 'tss'],
-            #'tss',
-            #'hss2',
-            #'precision',
-            #'recall',
-        ]}
-    else:
-        raise
-    columns = {**tags, **metrics}
     return columns
 
 
@@ -60,7 +44,10 @@ def retrieve(experiment_name, parent_run_name, p=0):
     return runs
 
 
-def select(runs, columns, rows):
+def select(runs, columns=None, rows=None):
+    rows = rows or {}
+    columns = columns or get_columns('arnet')
+
     # Select and rename columns
     if columns is not None:
         try:
@@ -76,6 +63,23 @@ def select(runs, columns, rows):
         runs.loc[mask, col] = runs.loc[mask, col].map(mapping)
 
     return runs
+
+
+def diff(runs_1, runs_2, subset=None):
+    """
+    The rows of the two dataframes must have the same setting.
+    """
+    subset = subset or ['ACC', 'AUC', 'TSS', 'HSS', 'BSS']
+    runs_diff = runs_2.copy()
+    runs_diff[subset] -= runs_1.loc[:, subset].values
+    return runs_diff
+
+
+# def compare(*runs, subset=None):
+#     subset = subset or ['ACC', 'AUC', 'TSS', 'HSS', 'BSS']
+#     runs_compare = runs[0].copy()
+#     runs_compare[subset] =
+
 
 
 def organize(runs, by=None, std=False):
