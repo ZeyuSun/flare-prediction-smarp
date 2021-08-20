@@ -78,28 +78,52 @@ def fig2rgb(fig):
 def draw_conv2d_weight(weight, vmin=None, vmax=None):
     import matplotlib as mpl
 
-    # Conv3d weight has shape (64, 1, 1, 11, 11)
+    # Conv3d weight has shape (out, in, D, H, W) = (64, 1, 1, 11, 11)
     filters = weight.detach().cpu().numpy()
-    n = int(np.ceil(np.sqrt(len(filters))))
     vmin = vmin or filters.min()
     vmax = vmax or filters.max()
 
-    widths = [3] * n + [0.4]
-    heights = [3] * n
-    fig = plt.figure(figsize=(10,10))
-    gs = mpl.gridspec.GridSpec(ncols=len(widths), nrows=len(heights), figure=fig,
-                               width_ratios=widths, height_ratios=heights)
-    gs.update(wspace=0.05, hspace=0.05)
-    for i in range(n):
-        for j in range(n):
-            ax = fig.add_subplot(gs[i, j])
-            ax.imshow(filters[i*n+j, 0, 0, :, :],
-                      cmap='gray', vmin=vmin, vmax=vmax)
-            ax.axis('off')
-    ax = fig.add_subplot(gs[:,-1])
-    norm = mpl.colors.Normalize(vmin=vmin, vmax=vmax)
-    cb = mpl.colorbar.ColorbarBase(ax, cmap=plt.get_cmap('gray'), norm=norm)
-    #gs.tight_layout(fig)
+    if filters.shape[1] != 1:
+        # Only visualize in-channels = 1
+        filters = filters[:, :1]
+
+    if filters.shape[2] == 1: # Time = 1
+        n = int(np.ceil(np.sqrt(len(filters))))
+        widths = [3] * n + [0.4]
+        heights = [3] * n
+        fig = plt.figure(figsize=(10,10))
+        gs = mpl.gridspec.GridSpec(ncols=len(widths), nrows=len(heights), figure=fig,
+                                   width_ratios=widths, height_ratios=heights)
+        gs.update(wspace=0.05, hspace=0.05)
+        for i in range(n):
+            for j in range(n):
+                ax = fig.add_subplot(gs[i, j])
+                ax.imshow(filters[i*n+j, 0, 0, :, :],
+                          cmap='gray', vmin=vmin, vmax=vmax)
+                ax.axis('off')
+        ax = fig.add_subplot(gs[:,-1])
+        norm = mpl.colors.Normalize(vmin=vmin, vmax=vmax)
+        cb = mpl.colorbar.ColorbarBase(ax, cmap=plt.get_cmap('gray'), norm=norm)
+        #gs.tight_layout(fig)
+    else: # Time > 1
+        N = filters.shape[0]
+        T = filters.shape[2]
+        widths = [3] * T + [0.4]
+        heights = [3] * N
+        fig = plt.figure(figsize=(T/2, N/3))
+        gs = mpl.gridspec.GridSpec(ncols=len(widths), nrows=len(heights), figure=fig,
+                                   width_ratios=widths, height_ratios=heights)
+        gs.update(wspace=0.05, hspace=0.05)
+        for i in range(N):
+            for j in range(T):
+                ax = fig.add_subplot(gs[i, j])
+                ax.imshow(filters[i, 0, j, :, :],
+                          cmap='gray', vmin=vmin, vmax=vmax)
+                ax.axis('off')
+        ax = fig.add_subplot(gs[:,-1])
+        norm = mpl.colors.Normalize(vmin=vmin, vmax=vmax)
+        cb = mpl.colorbar.ColorbarBase(ax, cmap=plt.get_cmap('gray'), norm=norm)
+        gs.tight_layout(fig)
     plt.close()
     return fig
 
