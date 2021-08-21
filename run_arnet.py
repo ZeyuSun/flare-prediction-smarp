@@ -14,7 +14,7 @@ from arnet.config import cfg
 logger = utils.setup_logger('outputs')
 
 
-def train(cfg, dm, resume=False):
+def train(cfg, datamodules, resume=False):
     pl.utilities.seed.seed_everything(seed=cfg.DATA.SEED, workers=True)
     callbacks = [
         pl.callbacks.early_stopping.EarlyStopping(
@@ -42,14 +42,18 @@ def train(cfg, dm, resume=False):
     kwargs = cfg.TRAINER.todict()
     kwargs.setdefault('callbacks', []).extend(callbacks)
     #kwargs['logger'] = tb_logger
-    trainer = pl.Trainer(**kwargs)
     if resume:
         learner = Learner.load_from_checkpoint(resume, cfg=cfg)
     else:
         learner = Learner(cfg)
-    trainer.validate(learner, datamodule=dm) # mlflow log before training
-    trainer.fit(learner, datamodule=dm)
-    return trainer.checkpoint_callback.best_model_path
+    best_model_paths = []
+    for dm in datamodules:
+        trainer = pl.Trainer(**kwargs)
+        trainer.validate(learner, datamodule=dm) # mlflow log before training
+        trainer.fit(learner, datamodule=dm)
+        best_model_paths.append(trainer.checkpoint_callback.best_model_path)
+        learner = Learner.load_from_checkpoint(trainer.checkpoint_callback.best_model_path)
+    return best_model_paths
 
 
 def test(cfg, dm):
