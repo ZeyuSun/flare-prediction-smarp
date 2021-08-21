@@ -238,6 +238,12 @@ def squarify(fig):
         fig.subplots_adjust(bottom=l, top=1-l)
 
 def draw_reliability_plot(y_true, y_prob, n_bins=5):
+    import torch
+    if not isinstance(y_true, torch.Tensor):
+        y_true = torch.tensor(y_true)
+    if not isinstance(y_prob, torch.Tensor):
+        y_prob = torch.tensor(y_prob)
+
     clim = y_true.double().mean() # np.mean's argument can't be torch.Tensor
     prob_true, prob_pred, bin_total = calibration_curve(y_true, y_prob,
                                                         n_bins=n_bins)

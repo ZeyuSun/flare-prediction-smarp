@@ -107,6 +107,10 @@ def get_metrics_probabilistic(y_true, y_prob, criterion='tss'):
     import torch
     from pytorch_lightning.metrics.functional import auroc
     #from sklearn.metrics import roc_auc_score
+    if not isinstance(y_true, torch.Tensor):
+        y_true = torch.tensor(y_true)
+    if not isinstance(y_prob, torch.Tensor):
+        y_prob = torch.tensor(y_prob)
 
     thresh = get_thresh(y_true, y_prob, criterion=criterion)
     y_pred = y_prob > thresh
