@@ -153,9 +153,10 @@ class ActiveRegionDataModule(pl.LightningDataModule):
 
     Handles cfg. Load and organize dataframes.
     """
-    def __init__(self, cfg):
+    def __init__(self, cfg, second_stage=False):
         super().__init__()
         self.cfg = cfg
+        self.second_stage = second_stage
         self._construct_transforms()
         self._construct_datasets(balanced=cfg.DATA.BALANCED)
         self.testmode = 'test'
@@ -166,28 +167,54 @@ class ActiveRegionDataModule(pl.LightningDataModule):
         self.transform = Compose(transforms)
 
     def _construct_datasets(self, balanced=True):
-        self.df_train, self.df_val, self.df_test = get_datasets(
-            self.cfg.DATA.DATABASE,
-            self.cfg.DATA.DATASET,
-            self.cfg.DATA.AUXDATA,
-            sizes='balanced' if self.cfg.DATA.BALANCED else None,
-            validation=True,
-            seed=self.cfg.DATA.SEED)
+        from pathlib import Path
+        from arnet.fusion import load_csv_dataset, group_split_data, rus
 
-        # # Refit on train and validation
-        # self.df_train, self.df_test = get_datasets(
-        #     self.cfg.DATA.DATABASE,
-        #     self.cfg.DATA.DATASET,
-        #     self.cfg.DATA.AUXDATA,
-        #     sizes=sizes,
-        #     validation=False,
-        #     seed=self.cfg.DATA.SEED)
-        # self.df_val = self.df_test
+        # Short aliases
+        database = self.cfg.DATA.DATABASE
+        dataset = self.cfg.DATA.DATASET
+        seed = self.cfg.DATA.SEED
+        balanced = self.cfg.DATA.BALANCED
 
+        # Load
+        df_smarp = load_csv_dataset(Path(database) / 'smarp.csv')
+        df_sharp = load_csv_dataset(Path(database) / 'sharp.csv')
+
+        # Split
+        if dataset in ['sharp', 'fused_sharp']:
+            df_train, df_test = group_split_data(df_sharp, seed=seed)
+            df_train, df_val = group_split_data(df_train, seed=seed)
+            df_vals = [df_val, df_test]
+            # first stage fused_sharp is the same as sharp
+            if dataset == 'fused_sharp' and self.second_stage:
+                df_vals.append(df_train)
+                df_train = df_smarp
+        elif dataset == ['smarp', 'fused_smarp']:
+            df_train, df_test = group_split_data(df_smarp, seed=seed)
+            df_train, df_val = group_split_data(df_train, seed=seed)
+            df_vals = [df_val, df_test]
+            if dataset == 'fused_smarp' and self.second_stage:
+                df_vals.append(df_train)
+                df_train = df_sharp
+
+        # RUS
+        if balanced:
+            df_train = rus(df_train, sizes='balanced', seed=seed)
+            df_vals= [rus(df, sizes='balanced', seed=seed) for df in df_vals]
+            df_test = rus(df_test, sizes='balanced', seed=seed)
+
+        # Set attributes
+        self.df_train = df_train
+        self.df_vals = df_vals
+        self.df_test = df_test
         self.df_vis = self.df_test.iloc[0:64:4] #sharp_train.loc[sharp_train['arpnum'] == 377].iloc[0:8:2]
 
-        self.df_val_pred = self.df_val.copy() # to be logged as artifacts
-        self.df_test_pred = self.df_test.copy()
+        # Prediction results
+        self.val_history = {
+            f'validation{i}': df.copy()
+            for i, df in enumerate(self.df_vals)
+        }
+        self.val_history['test'] = self.df_test.copy()
 
     def set_class_weight(self, cfg):
         p = self.df_train['label'].mean()
@@ -196,7 +223,7 @@ class ActiveRegionDataModule(pl.LightningDataModule):
 
     def fill_prob(self, tag, global_step, probs):
         import numpy as np
-        df = {'validation': self.df_val_pred, 'test': self.df_test_pred}[tag] # alias
+        df = self.val_history[tag]
         probs = [probs[i] if i < len(probs) else np.nan for i in range(len(df))]
         df[f'step-{global_step}'] = probs
 
@@ -218,8 +245,8 @@ class ActiveRegionDataModule(pl.LightningDataModule):
         return loader
 
     def val_dataloader(self):
-        loader = self.get_dataloader(self.df_val)
-        return loader
+        loaders = [self.get_dataloader(df) for df in self.df_vals]
+        return loaders
 
     def test_dataloader(self):
         if self.testmode == 'test':

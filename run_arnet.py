@@ -18,13 +18,13 @@ def train(cfg, datamodules, resume=False):
     pl.utilities.seed.seed_everything(seed=cfg.DATA.SEED, workers=True)
     callbacks = [
         pl.callbacks.early_stopping.EarlyStopping(
-            monitor='validation/auc',
+            monitor='validation0/auc',
             patience=cfg.LEARNER.PATIENCE,
             mode='max',
             #verbose=True,
         ),
         pl.callbacks.ModelCheckpoint(
-            monitor='validation/auc',
+            monitor='validation0/auc',
             save_top_k=1,
             mode='max',
             #verbose=True,
@@ -56,14 +56,16 @@ def train(cfg, datamodules, resume=False):
     return best_model_paths
 
 
-def test(cfg, dm):
+def test(cfg, datamodules):
+    dm = datamodules[0]
     learner = Learner.load_from_checkpoint(cfg.LEARNER.CHECKPOINT, cfg=cfg)
     logger = build_test_logger(learner, testmode='test')
     trainer = pl.Trainer(logger=logger, **cfg.TRAINER.todict())
     trainer.test(learner, datamodule=dm)
 
 
-def visualize(cfg, dm):
+def visualize(cfg, datamodules):
+    dm = datamodules[0]
     learner = Learner.load_from_checkpoint(cfg.LEARNER.CHECKPOINT, cfg=cfg)
     logger = build_test_logger(learner, testmode='visualize')
     trainer = pl.Trainer(logger=logger, **cfg.TRAINER.todict())
@@ -83,8 +85,10 @@ def launch(config, modes, resume, opts):
     cfg.merge_from_list(opts)
     # cfg.freeze()
 
-    dm = ActiveRegionDataModule(cfg) # datamodule construction also changes transformation params
-    cfg = dm.set_class_weight(cfg)
+    datamodules = [ActiveRegionDataModule(cfg)] # datamodule construction also changes transformation params
+    if cfg.DATA.DATASET in ['fused_sharp', 'fused_smarp']:
+        datamodules.append(ActiveRegionDataModule(cfg, second_stage=True))
+    cfg = datamodules[0].set_class_weight(cfg)
 
     mlflow.log_params({key: val
                        for key, val in cfg.flatten().items()
@@ -98,19 +102,21 @@ def launch(config, modes, resume, opts):
 
     if 'train' in modes:
         logger.info("======== TRAIN ========")
-        cfg.LEARNER.CHECKPOINT = train(cfg, dm, resume)
+        best_model_paths = train(cfg, datamodules, resume)
+        cfg.LEARNER.CHECKPOINT = best_model_paths[-1]
         mlflow.set_tag('checkpoint', cfg.LEARNER.CHECKPOINT)
+        mlflow.log_param('best_model_paths', best_model_paths)
         mlflow.log_param('LEARNER.CHECKPOINT', cfg.LEARNER.CHECKPOINT) # update
         logger.info("Checkpoint saved at %s" % cfg.LEARNER.CHECKPOINT)
 
     if 'test' in modes:
         logger.info("======== TEST ========")
-        test(cfg, dm)
+        test(cfg, datamodules)
 
     #TODO: visualization for LSTM
     if 'visualize' in modes:
         logger.info("======== VISUALIZE ========")
-        visualize(cfg, dm)
+        visualize(cfg, datamodules)
 
 
 def main():
@@ -158,8 +164,8 @@ def sweep():
     parser.add_argument('-d', '--data_root', default='datasets')
     parser.add_argument('-c', '--config_root', default='arnet/configs')
     parser.add_argument('-s', '--smoke', action='store_true')
-    parser.add_argument('-e', '--experiment_name', default='leaderboard3')
-    parser.add_argument('-r', '--run_name', default='cnn_li2020')
+    parser.add_argument('-e', '--experiment_name', default='two_stages')
+    parser.add_argument('-r', '--run_name', default='test')
     parser.add_argument('opts', default=None, nargs=argparse.REMAINDER)
     args = parser.parse_args()
     if args.smoke:
@@ -183,7 +189,7 @@ def sweep():
             for balanced in [True]:
                 for dataset in ['sharp', 'fused_sharp']:
                     for config in configs:
-                        for seed in range(5):
+                        for seed in range(1):
                             opts = [
                                 'DATA.DATABASE', database,
                                 'DATA.DATASET', dataset,
