@@ -120,7 +120,8 @@ class Learner(pl.LightningModule):
                 self.log_video('train/inputs', x)
 
             # Layer weight
-            if self.current_epoch == 0 and batch_idx in [0, 1, 2, 5, 10, 20, 50, 100]:
+            # not changing fast enough within first epoch
+            if False: #self.current_epoch == 0 and batch_idx in [0, 1, 2, 5, 10, 20, 50, 100]:
                 self.log_layer_weights('weight', ['convs.conv1'])
 
             # Middle layer features
@@ -151,7 +152,8 @@ class Learner(pl.LightningModule):
             mlflow.log_metric(tag + '/loss', avg_val_loss.item(), step=self.global_step)
 
             if True:
-                step = -1 if self.global_step == 0 else None # before training
+                #step = -1 if self.global_step == 0 else None # before training
+                step = None # use global_step
                 self.log_layer_weights('weight', ['convs.conv1'], step=step)
 
             y_true = torch.cat([out['y_true'] for out in dataloader_outputs])
@@ -258,13 +260,14 @@ class Learner(pl.LightningModule):
 
     def on_train_end(self):
         for tag, df in self.trainer.datamodule.val_history.items():
-            tmp_path = f'outputs/{tag}.csv'
+            tmp_path = 'outputs/val_predictions.csv'
             df.to_csv(tmp_path)
-            mlflow.log_artifact(tmp_path, 'validation')
+            mlflow.log_artifact(tmp_path, tag) # tag in ['validation0', ..., 'test']
 
     def on_test_end(self):
-        self.trainer.datamodule.val_history['test'].to_csv('outputs/test.csv')
-        mlflow.log_artifact('outputs/test.csv', 'test')
+        tmp_path = 'outputs/test_predictions.csv'
+        self.trainer.datamodule.val_history['test'].to_csv(tmp_path)
+        mlflow.log_artifact(tmp_path, 'test')
 
     def log_meta(self, outputs, model_type='classification', step=None):
         video = outputs['video']
@@ -309,21 +312,24 @@ class Learner(pl.LightningModule):
     def log_layer_weights(self, tag, layer_names, step=None):
         step = step or self.global_step
         from arnet.modeling.models import MODEL_REGISTRY
-        #if isinstance(self.model, MODEL_REGISTRY.get('CNN_Li2020')):
-        for layer_name in layer_names:
-            layer = utils.get_layer(self.model, layer_name)
-            if isinstance(layer, torch.nn.Conv3d):
-                fig = utils.draw_conv2d_weight(layer.weight)
-                image_tensor = utils.fig2rgb(fig)
-                save_name = tag + f'/{layer_name}_weight_{step}'
-                self.logger.experiment.add_image(save_name, image_tensor, step)
-                mlflow.log_figure(fig, save_name + '.png')
-                # Set vmin vmax
-                fig = utils.draw_conv2d_weight(layer.weight, vmin=-1, vmax=1)
-                image_tensor = utils.fig2rgb(fig)
-                save_name = tag + f'/uniform_scaled/{layer_name}_weight_{step}'
-                self.logger.experiment.add_image(save_name, image_tensor, step)
-                mlflow.log_figure(fig, save_name + '.png')
+        if (isinstance(self.model, MODEL_REGISTRY.get('CNN_Li2020')) or
+            isinstance(self.model, MODEL_REGISTRY.get('SimpleC3D'))):
+            for layer_name in layer_names:
+                layer = utils.get_layer(self.model, layer_name)
+                if isinstance(layer, torch.nn.Conv3d):
+                    # Unscaled
+                    #fig = utils.draw_conv2d_weight(layer.weight)
+                    #image_tensor = utils.fig2rgb(fig)
+                    #save_name = tag + f'/unscaled/{layer_name}_weight/{step}'
+                    #self.logger.experiment.add_image(save_name, image_tensor, step)
+                    #mlflow.log_figure(fig, save_name + '.png')
+
+                    # Set vmin vmax
+                    fig = utils.draw_conv2d_weight(layer.weight, vmin=-1, vmax=1)
+                    image_tensor = utils.fig2rgb(fig)
+                    save_name = tag + f'/uniform_scaled/{layer_name}_weight/{step}'
+                    self.logger.experiment.add_image(save_name, image_tensor, step)
+                    mlflow.log_figure(fig, save_name + '.png')
 
     def log_layer_activations(self, tag, x, layer_names, step=None):
         step = step or self.global_step
@@ -353,10 +359,11 @@ class Learner(pl.LightningModule):
                            step=step)
 
     def log_cm(self, tag, cm, labels=None, step=None):
+        step = step or self.global_step
         fig = utils.draw_confusion_matrix(cm.cpu())
         image_tensor = utils.fig2rgb(fig)
         self.logger.experiment.add_image(tag, image_tensor, step)
-        mlflow.log_figure(fig, tag + f'/confusion_matrix_{step}.png')
+        mlflow.log_figure(fig, tag + f'/{step}.png')
 
     def log_eval_plots(self, tag, y_true, y_prob, step=None):
         y_true = y_true.detach().cpu()
@@ -364,16 +371,16 @@ class Learner(pl.LightningModule):
         step = step or self.global_step
 
         reliability = utils.draw_reliability_plot(y_true, y_prob, n_bins=10)
-        mlflow.log_figure(reliability, tag + f'/reliability_{step}.png')
+        mlflow.log_figure(reliability, tag + f'/reliability/{step}.png')
         reliability = utils.fig2rgb(reliability)
         self.logger.experiment.add_image(tag + '/reliability', reliability, step)
 
         roc = utils.draw_roc(y_true, y_prob)
-        mlflow.log_figure(roc, tag + f'/roc_{step}.png')
+        mlflow.log_figure(roc, tag + f'/roc/{step}.png')
         roc = utils.fig2rgb(roc)
         self.logger.experiment.add_image(tag + '/roc', roc, step)
 
         ssp = utils.draw_ssp(y_true, y_prob)
-        mlflow.log_figure(ssp, tag + f'/ssp_{step}.png')
+        mlflow.log_figure(ssp, tag + f'/ssp/{step}.png')
         ssp = utils.fig2rgb(ssp)
         self.logger.experiment.add_image(tag + '/ssp', ssp, step)

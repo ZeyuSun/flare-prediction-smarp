@@ -73,6 +73,7 @@ def visualize(cfg, dm):
 
 def launch(config, modes, resume, opts):
     """Perform training, testing, and/or visualization"""
+    logger.info("======== LAUNCH ========")
     global cfg  # If not stated, cfg is seen as local due to in-function assignment.
     if config is not None:
         cfg.merge_from_file(config)
@@ -172,12 +173,12 @@ def sweep():
     databases = [p for p in Path(args.data_root).iterdir() if p.is_dir()]
     databases = [Path(args.data_root).absolute() / d for d in ['M_Q_24hr']]
     #configs = [c for c in Path(args.config_root).iterdir()]
-    configs = [Path('arnet/configs').absolute() / f'{c}.yaml' for c in ['CNN']]
+    configs = [Path('arnet/configs').absolute() / f'{c}.yaml' for c in ['LSTM', 'CNN']]
     mlflow.set_experiment(args.experiment_name)
     with mlflow.start_run(run_name=args.run_name):
         for database in databases:
             for balanced in [True]:
-                for dataset in ['sharp', 'fused_sharp']:
+                for dataset in ['sharp', 'fused_sharp', 'smarp', 'fused_smarp']:
                     for config in configs:
                         for seed in range(5):
                             opts = [
