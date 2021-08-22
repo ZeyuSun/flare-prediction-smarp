@@ -189,7 +189,7 @@ class ActiveRegionDataModule(pl.LightningDataModule):
             if dataset == 'fused_sharp' and self.second_stage:
                 df_vals.append(df_train)
                 df_train = df_smarp
-        elif dataset == ['smarp', 'fused_smarp']:
+        elif dataset in ['smarp', 'fused_smarp']:
             df_train, df_test = group_split_data(df_smarp, seed=seed)
             df_train, df_val = group_split_data(df_train, seed=seed)
             df_vals = [df_val, df_test]
