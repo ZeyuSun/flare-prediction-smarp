@@ -47,12 +47,22 @@ def train(cfg, datamodules, resume=False):
     else:
         learner = Learner(cfg)
     best_model_paths = []
-    for dm in datamodules:
-        trainer = pl.Trainer(**kwargs)
+    trainer = pl.Trainer(**kwargs)
+    for i, dm in enumerate(datamodules):
+        mlflow.log_metric('phase', i, step=trainer.global_step)
+        trainer.logger.experiment.add_scalar('phase', i, trainer.global_step)
+
         trainer.validate(learner, datamodule=dm) # mlflow log before training
         trainer.fit(learner, datamodule=dm)
-        best_model_paths.append(trainer.checkpoint_callback.best_model_path)
-        learner = Learner.load_from_checkpoint(trainer.checkpoint_callback.best_model_path)
+
+        # hack: trainer does not advance epoch at the end
+        trainer.train_loop.current_epoch += 1
+        trainer.train_loop.max_epochs += 10
+        trainer.callbacks[0].patience += 5
+
+        best_model_path = trainer.checkpoint_callback.best_model_path
+        best_model_paths.append(best_model_path)
+        learner = Learner.load_from_checkpoint(best_model_path)
     return best_model_paths
 
 
@@ -79,6 +89,7 @@ def visualize(cfg, datamodules):
 
 def launch(config, modes, resume, opts):
     """Perform training, testing, and/or visualization"""
+    logger.info("======== LAUNCH ========")
     global cfg  # If not stated, cfg is seen as local due to in-function assignment.
     if config is not None:
         cfg.merge_from_file(config)
@@ -165,7 +176,7 @@ def sweep():
     parser.add_argument('-c', '--config_root', default='arnet/configs')
     parser.add_argument('-s', '--smoke', action='store_true')
     parser.add_argument('-e', '--experiment_name', default='two_stages')
-    parser.add_argument('-r', '--run_name', default='test')
+    parser.add_argument('-r', '--run_name', default='two_stages')
     parser.add_argument('opts', default=None, nargs=argparse.REMAINDER)
     args = parser.parse_args()
     if args.smoke:
@@ -182,14 +193,14 @@ def sweep():
     databases = [p for p in Path(args.data_root).iterdir() if p.is_dir()]
     databases = [Path(args.data_root).absolute() / d for d in ['M_Q_24hr']]
     #configs = [c for c in Path(args.config_root).iterdir()]
-    configs = [Path('arnet/configs').absolute() / f'{c}.yaml' for c in ['CNN']]
+    configs = [Path('arnet/configs').absolute() / f'{c}.yaml' for c in ['LSTM', 'CNN']]
     mlflow.set_experiment(args.experiment_name)
     with mlflow.start_run(run_name=args.run_name):
         for database in databases:
             for balanced in [True]:
-                for dataset in ['sharp', 'fused_sharp']:
+                for dataset in ['sharp', 'fused_sharp', 'smarp', 'fused_smarp']:
                     for config in configs:
-                        for seed in range(1):
+                        for seed in range(5):
                             opts = [
                                 'DATA.DATABASE', database,
                                 'DATA.DATASET', dataset,

@@ -214,7 +214,7 @@ class ActiveRegionDataModule(pl.LightningDataModule):
             f'validation{i}': df.copy()
             for i, df in enumerate(self.df_vals)
         }
-        self.val_history['test'] = self.df_test.copy()
+        self.val_history['test'] = self.df_test.copy() # learner.py: fill_prob in test_epoch_end()
 
     def set_class_weight(self, cfg):
         p = self.df_train['label'].mean()
