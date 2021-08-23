@@ -166,28 +166,27 @@ class ActiveRegionDataModule(pl.LightningDataModule):
         self.transform = Compose(transforms)
 
     def _construct_datasets(self, balanced=True):
-        self.df_train, self.df_val, self.df_test = get_datasets(
+        df_train, df_val, df_test = get_datasets(
             self.cfg.DATA.DATABASE,
             self.cfg.DATA.DATASET,
             self.cfg.DATA.AUXDATA,
             sizes='balanced' if self.cfg.DATA.BALANCED else None,
             validation=True,
             seed=self.cfg.DATA.SEED)
+        df_vals = [df_val, df_test]
 
-        # # Refit on train and validation
-        # self.df_train, self.df_test = get_datasets(
-        #     self.cfg.DATA.DATABASE,
-        #     self.cfg.DATA.DATASET,
-        #     self.cfg.DATA.AUXDATA,
-        #     sizes=sizes,
-        #     validation=False,
-        #     seed=self.cfg.DATA.SEED)
-        # self.df_val = self.df_test
-
+        # Set attributes
+        self.df_train = df_train
+        self.df_vals = df_vals
+        self.df_test = df_test
         self.df_vis = self.df_test.iloc[0:64:4] #sharp_train.loc[sharp_train['arpnum'] == 377].iloc[0:8:2]
 
-        self.df_val_pred = self.df_val.copy() # to be logged as artifacts
-        self.df_test_pred = self.df_test.copy()
+        # Prediction results
+        self.val_history = {
+            f'validation{i}': df.copy()
+            for i, df in enumerate(self.df_vals)
+        }
+        self.val_history['test'] = self.df_test.copy()
 
     def set_class_weight(self, cfg):
         p = self.df_train['label'].mean()
@@ -196,7 +195,7 @@ class ActiveRegionDataModule(pl.LightningDataModule):
 
     def fill_prob(self, tag, global_step, probs):
         import numpy as np
-        df = {'validation': self.df_val_pred, 'test': self.df_test_pred}[tag] # alias
+        df = self.val_history[tag]
         probs = [probs[i] if i < len(probs) else np.nan for i in range(len(df))]
         df[f'step-{global_step}'] = probs
 
@@ -218,8 +217,8 @@ class ActiveRegionDataModule(pl.LightningDataModule):
         return loader
 
     def val_dataloader(self):
-        loader = self.get_dataloader(self.df_val)
-        return loader
+        loaders = [self.get_dataloader(df) for df in self.df_vals]
+        return loaders
 
     def test_dataloader(self):
         if self.testmode == 'test':

@@ -136,7 +136,7 @@ class Learner(pl.LightningModule):
         self.logger.experiment.flush()
         return {'loss': loss}
 
-    def validation_step(self, batch, batch_idx):
+    def validation_step(self, batch, batch_idx, dataloader_idx):
         loss = self.model.get_loss(batch)
 
         result = self.model.result
@@ -144,33 +144,24 @@ class Learner(pl.LightningModule):
         return result
 
     def validation_epoch_end(self, outputs):
-        avg_val_loss = torch.stack([out['val_loss'] for out in outputs]).mean()
-        self.log('validation/loss', avg_val_loss)
-        mlflow.log_metric('validation/loss', avg_val_loss.item(), step=self.global_step)
+        for dataloader_idx, dataloader_outputs in enumerate(outputs):
+            tag = f'validation{dataloader_idx}'
+            avg_val_loss = torch.stack([out['val_loss'] for out in dataloader_outputs]).mean()
+            self.log(tag + '/loss', avg_val_loss)
+            mlflow.log_metric(tag + '/loss', avg_val_loss.item(), step=self.global_step)
 
-        if True:
-            step = -1 if self.global_step == 0 else None # before training
-            self.log_layer_weights('weight', ['convs.conv1'], step=step)
+            if True:
+                step = -1 if self.global_step == 0 else None # before training
+                self.log_layer_weights('weight', ['convs.conv1'], step=step)
 
-        if self.model.mode == 'classification':
-            y_true = torch.cat([out['y_true'] for out in outputs])
-            y_prob = torch.cat([out['y_prob'] for out in outputs])
-            self.trainer.datamodule.fill_prob('validation', self.global_step, y_prob.detach().cpu().numpy())
+            y_true = torch.cat([out['y_true'] for out in dataloader_outputs])
+            y_prob = torch.cat([out['y_prob'] for out in dataloader_outputs])
+            self.trainer.datamodule.fill_prob(tag, self.global_step, y_prob.detach().cpu().numpy())
             scores, cm2, _ = utils.get_metrics_probabilistic(y_true, y_prob, criterion=None)
-            self.log_scores('validation', scores, step=self.global_step) # pp.pprint(scores)
-            self.log_cm('validation/cm2', cm2, step=self.global_step)
-            self.log_eval_plots('validation', y_true, y_prob, step=self.global_step)
-        elif self.model.mode == 'regression':
-            i_true = torch.cat([out['i_true'] for out in outputs])
-            i_pred = torch.cat([out['i_pred'] for out in outputs])
-            scores, cm6, cm2, cmq = utils.get_metrics_multiclass(i_true, i_pred)
-            self.log_scores('validation', scores, step=self.global_step)
-            self.log_cm('validation/cm6', cm6, labels=['Q', 'A', 'B', 'C', 'M', 'X'], step=self.global_step)
-            self.log_cm('validation/cm2', cm2, step=self.global_step)
-            self.log_cm('validation/cmq', cmq, step=self.global_step)
-        else:
-            raise ValueError
-        mlflow.log_artifacts(self.logger.log_dir, 'tensorboard/train_val')
+            self.log_scores(tag, scores, step=self.global_step) # pp.pprint(scores)
+            self.log_cm(tag + '/cm2', cm2, step=self.global_step)
+            self.log_eval_plots(tag, y_true, y_prob, step=self.global_step)
+            mlflow.log_artifacts(self.logger.log_dir, 'tensorboard/train_val')
 
     def test_step(self, batch, batch_idx):
         if self.testmode == 'test':
@@ -266,12 +257,14 @@ class Learner(pl.LightningModule):
         return torch.optim.Adam(self.parameters(), lr=self.cfg.LEARNER.LEARNING_RATE)
 
     def on_train_end(self):
-        self.trainer.datamodule.df_val_pred.to_csv('outputs/val_pred.csv')
-        mlflow.log_artifact('outputs/val_pred.csv', 'validation/predictions.csv')
+        for tag, df in self.trainer.datamodule.val_history.items():
+            tmp_path = f'outputs/{tag}.csv'
+            df.to_csv(tmp_path)
+            mlflow.log_artifact(tmp_path, 'validation')
 
     def on_test_end(self):
-        self.trainer.datamodule.df_test_pred.to_csv('outputs/test_pred.csv')
-        mlflow.log_artifact('outputs/test_pred.csv', 'test/predictions.csv')
+        self.trainer.datamodule.val_history['test'].to_csv('outputs/test.csv')
+        mlflow.log_artifact('outputs/test.csv', 'test')
 
     def log_meta(self, outputs, model_type='classification', step=None):
         video = outputs['video']
