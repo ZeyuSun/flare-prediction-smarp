@@ -318,16 +318,17 @@ class Learner(pl.LightningModule):
                 layer = utils.get_layer(self.model, layer_name)
                 if isinstance(layer, torch.nn.Conv3d):
                     # Unscaled
-                    #fig = utils.draw_conv2d_weight(layer.weight)
-                    #image_tensor = utils.fig2rgb(fig)
-                    #save_name = tag + f'/unscaled/{layer_name}_weight/{step}'
-                    #self.logger.experiment.add_image(save_name, image_tensor, step)
-                    #mlflow.log_figure(fig, save_name + '.png')
+                    fig = utils.draw_conv2d_weight(layer.weight)
+                    image_tensor = utils.fig2rgb(fig)
+                    save_name = tag + f'/unscaled/{layer_name}'
+                    self.logger.experiment.add_image(save_name, image_tensor, step)
+                    save_name += f'/{step}.png'
+                    mlflow.log_figure(fig, save_name)
 
                     # Set vmin vmax
-                    fig = utils.draw_conv2d_weight(layer.weight, vmin=-1, vmax=1)
+                    fig = utils.draw_conv2d_weight(layer.weight, vmin=-0.3, vmax=0.3) # -1/+1 for lr 1e-2
                     image_tensor = utils.fig2rgb(fig)
-                    save_name = tag + f'/uniform_scaled/{layer_name}_weight'
+                    save_name = tag + f'/uniform_scaled/{layer_name}'
                     self.logger.experiment.add_image(save_name, image_tensor, step)
                     save_name += f'/{step}.png'
                     mlflow.log_figure(fig, save_name)
