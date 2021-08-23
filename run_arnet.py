@@ -18,13 +18,13 @@ def train(cfg, dm, resume=False):
     pl.utilities.seed.seed_everything(seed=cfg.DATA.SEED, workers=True)
     callbacks = [
         pl.callbacks.early_stopping.EarlyStopping(
-            monitor='validation0/auc',
+            monitor='validation0/tss',
             patience=cfg.LEARNER.PATIENCE,
             mode='max',
             #verbose=True,
         ),
         pl.callbacks.ModelCheckpoint(
-            monitor='validation0/auc',
+            monitor='validation0/tss',
             save_top_k=1,
             mode='max',
             #verbose=True,
