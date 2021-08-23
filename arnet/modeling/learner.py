@@ -327,9 +327,10 @@ class Learner(pl.LightningModule):
                     # Set vmin vmax
                     fig = utils.draw_conv2d_weight(layer.weight, vmin=-1, vmax=1)
                     image_tensor = utils.fig2rgb(fig)
-                    save_name = tag + f'/uniform_scaled/{layer_name}_weight/{step}'
+                    save_name = tag + f'/uniform_scaled/{layer_name}_weight'
                     self.logger.experiment.add_image(save_name, image_tensor, step)
-                    mlflow.log_figure(fig, save_name + '.png')
+                    save_name += f'/{step}.png'
+                    mlflow.log_figure(fig, save_name)
 
     def log_layer_activations(self, tag, x, layer_names, step=None):
         step = step or self.global_step
