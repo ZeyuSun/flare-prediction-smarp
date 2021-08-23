@@ -326,7 +326,7 @@ class Learner(pl.LightningModule):
                     mlflow.log_figure(fig, save_name)
 
                     # Set vmin vmax
-                    fig = utils.draw_conv2d_weight(layer.weight, vmin=-0.3, vmax=0.3) # -1/+1 for lr 1e-2
+                    fig = utils.draw_conv2d_weight(layer.weight, vmin=-0.8, vmax=0.8) # -1/+1 for lr 1e-2
                     image_tensor = utils.fig2rgb(fig)
                     save_name = tag + f'/uniform_scaled/{layer_name}'
                     self.logger.experiment.add_image(save_name, image_tensor, step)
