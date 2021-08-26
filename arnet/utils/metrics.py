@@ -3,6 +3,62 @@ import torch
 import logging
 
 
+# sklearn interface
+import numpy as np
+
+def accuracy(y_true, y_pred):
+    acc = np.mean(y_true == y_pred)
+    return acc
+
+
+def true_skill_statistic(y_true, y_pred):
+    from sklearn.metrics import confusion_matrix
+
+    cm = confusion_matrix(y_true, y_pred)
+    [[TN, FP], [FN, TP]] = cm
+    pod = TP / (TP + FN)
+    far = FP / (FP + TN)
+    tss = pod - far
+    return tss
+
+
+def heidke_skill_score(y_true, y_pred):
+    """Same as sklearn.metrics.cohen_kappa_score"""
+    from sklearn.metrics import confusion_matrix
+
+    cm = confusion_matrix(y_true, y_pred)
+    [[TN, FP], [FN, TP]] = cm
+    N = TN + FP
+    P = TP + FN
+    hss = 2 * (TP * TN - FN * FP) / (P * (FN+TN) + (TP+FP) * N)
+    return hss
+
+
+# torch interface
+def get_scores_from_cm(cm):
+    [[TN, FP], [FN, TP]] = cm
+    N = TN + FP
+    P = TP + FN
+    precisions = torch.diagonal(cm) / torch.sum(cm, 0)
+    recalls = torch.diagonal(cm) / torch.sum(cm, 1)
+    f1 = 2 * precisions[1] * recalls[1] / (precisions[1] + recalls[1])
+    pod = recalls[1]
+    far = 1 - recalls[0]
+    tss = pod - far
+    hss1 = (TP + TN -N) / P
+    hss2 = 2 * (TP * TN - FN * FP) / (P * (FN+TN) + (TP+FP) * N)
+    scores = {
+        'precision': precisions[1],
+        'recall': recalls[1],
+        'accuracy': (TP + TN) / (N + P),
+        'f1': f1,
+        'tss': tss,
+        'hss1': hss1,
+        'hss2': hss2,
+    }
+    return scores
+
+
 def confusion_matrix(
         pred: torch.Tensor,
         target: torch.Tensor,
