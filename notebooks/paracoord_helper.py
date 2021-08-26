@@ -25,10 +25,10 @@ def parallel_coordinates_and_hist(*args, **kwargs):
 
     # Make subplots
     cols = len(dimensions)
-    fig = make_subplots(rows=2, cols=cols, specs=[
+    fig = go.FigureWidget(make_subplots(rows=2, cols=cols, specs=[
         [{'type': 'domain', 'colspan': cols}] + [None] * (cols - 1),
         [{} for _ in range(cols)],
-    ])
+    ]))
 
     # Parallel coordinates
     pc = px.parallel_coordinates(*args, **kwargs)
@@ -36,43 +36,53 @@ def parallel_coordinates_and_hist(*args, **kwargs):
 
     # Histograms
     for j in range(cols):
-        # # How to not share binsize?
-        # # hist.alignmentgroup = False # doesn't help
-        # hist_fig = px.histogram(
-        #     df,
-        #     y=dimensions[j],
-        #     color='label',
-        # )
-        # hist = hist_fig.data # hist is a tuple of two traces
-        if dimensions[j] != 'labels':
-            hist1 = go.Histogram(
-                y=df.loc[~df['label'].astype(bool), dimensions[j]],
-                showlegend=False,
-                marker=dict(color='steelblue'),
-            )
-            hist2 = go.Histogram(
-                y=df.loc[df['label'].astype(bool), dimensions[j]],
-                showlegend=False,
-                marker=dict(color='firebrick'),
-            )
-            fig.add_trace(hist1, row=2, col=j+1)
-            fig.add_trace(hist2, row=2, col=j+1)
-        else:
-            bar = go.Bar(
-                y=df['label']
-            )
-            fig.add_trace(bar, row=2, col=j+1)
-        # yaxis_title overlaps with the plot on its left
-        # automargin doesn't help
-        #fig.update_yaxes(
-        #    title_text=dimensions[j],
-        #    automargin=True,
-        #    row=2, col=j+1
-        #)
-        #fig.update_xaxes(title_text=dimensions[j], row=2, col=j+1)
-    fig.update_layout(barmode='stack') # 'group', 'relative'
+        fig_hist = px.histogram(
+            df,
+            y=dimensions[j],
+            color='label',
+            color_discrete_map={0: 'steelblue', 1: 'firebrick'}
+        )
+        fig_hist.data = sorted(fig_hist.data, key=lambda hist: hist.legendgroup)
+        fig_hist.update_traces(
+            #alignmentgroup=None,
+            bingroup=None,
+            #legendgroup=None, # traces within the group are shown simutaneously
+            #offsetgroup=None,
+        )
+        fig.add_traces(fig_hist.data, rows=2, cols=j+1)
+        axisn = 'axis' if j == 0 else f'axis{j+1}'
+        fig.update_layout({
+            f'x{axisn}_title_text': dimensions[j],
+            f'y{axisn}_title_text': None,
+            'showlegend': False,
+        })
+        fig.update_xaxes(title_text=dimensions[j], row=2, col=j+1)
+    fig.update_layout(barmode='stack') # 'group', 'relative', 'overlay'
 
-    return fig
+    def update_highlight(dimension, constraintrange):
+        import numpy as np
+        masks = []
+        for d in fig.data[0].dimensions:
+            if d.constraintrange is not None:
+                crs = np.array(d.constraintrange)
+                if crs.ndim == 1:
+                    crs = np.expand_dims(crs, axis=0)
+                masks_dim = []
+                for cr in crs:
+                    #labels_rev = {v: k for k, v in labels.items()}
+                    #key = labels_rev[d.label]
+                    key = d.label
+                    masks_dim.append(df[key].between(*cr))
+                masks.append(np.logical_or.reduce(masks_dim))
+        mask = np.logical_and.reduce(masks)
+        for i, d in enumerate(fig.data[0].dimensions):
+            fig.data[i*2+1].y = df.loc[mask & (~df['label'].astype(bool)), d.label]
+            fig.data[i*2+2].y = df.loc[mask & (df['label'].astype(bool)), d.label]
+
+    for d in fig.data[0].dimensions:
+        d.on_change(update_highlight, 'constraintrange')
+
+    return fig #, update_highlight
 
 
 def test_parallel_coordinates_and_hist(data_frame, columns):
