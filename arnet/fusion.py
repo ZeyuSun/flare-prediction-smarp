@@ -71,13 +71,13 @@ def get_datasets(database, dataset, auxdata,
         if validation:
             df_train, df_val = group_split_data(df_train, seed=seed)
         if dataset == 'fused_sharp':
-            df_train = pd.concat((df_train, df_smarp)).reset_index(drop=True)
+            df_train = df_smarp
     elif dataset in ['smarp', 'fused_smarp']:
         df_train, df_test = group_split_data(df_smarp, seed=seed)
         if validation:
             df_train, df_val = group_split_data(df_train, seed=seed)
         if dataset == 'fused_smarp':
-            df_train = pd.concat((df_train, df_sharp)).reset_index(drop=True)
+            df_train = df_sharp
 
     if sizes: # Why rus after split? Strict ratio; Option to rus only train
         df_train = rus(df_train, sizes=sizes, seed=seed)
