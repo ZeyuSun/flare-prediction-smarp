@@ -43,23 +43,14 @@ def parallel_coordinates_and_hist(*args, **kwargs):
             color_discrete_map={0: 'steelblue', 1: 'firebrick'}
         )
         fig_hist.data = sorted(fig_hist.data, key=lambda hist: hist.legendgroup)
-        fig_hist.update_traces(
-            #alignmentgroup=None,
-            bingroup=None,
-            #legendgroup=None, # traces within the group are shown simutaneously
-            #offsetgroup=None,
-        )
+        fig_hist.update_traces(bingroup=None)
         fig.add_traces(fig_hist.data, rows=2, cols=j+1)
-        axisn = 'axis' if j == 0 else f'axis{j+1}'
-        fig.update_layout({
-            f'x{axisn}_title_text': dimensions[j],
-            f'y{axisn}_title_text': None,
-            'showlegend': False,
-        })
         fig.update_xaxes(title_text=dimensions[j], row=2, col=j+1)
-    fig.update_layout(barmode='stack') # 'group', 'relative', 'overlay'
+        fig.update_yaxes(title_text=None, row=2, col=j+1)
+    fig.update_layout(barmode='stack', showlegend=False) # 'group', 'relative', 'overlay'
 
     def update_highlight(dimension, constraintrange):
+        from pathos.multiprocessing import Pool
         import numpy as np
         masks = []
         for d in fig.data[0].dimensions:
@@ -75,14 +66,16 @@ def parallel_coordinates_and_hist(*args, **kwargs):
                     masks_dim.append(df[key].between(*cr))
                 masks.append(np.logical_or.reduce(masks_dim))
         mask = np.logical_and.reduce(masks)
-        for i, d in enumerate(fig.data[0].dimensions):
-            fig.data[i*2+1].y = df.loc[mask & (~df['label'].astype(bool)), d.label]
-            fig.data[i*2+2].y = df.loc[mask & (df['label'].astype(bool)), d.label]
+        # Pool doesn't work here probabily because fig are copied to each worker
+        with fig.batch_update():
+            for i, d in enumerate(fig.data[0].dimensions):
+                fig.data[i*2+1].y = df.loc[mask & (~df['label'].astype(bool)), d.label]
+                fig.data[i*2+2].y = df.loc[mask & (df['label'].astype(bool)), d.label]
 
     for d in fig.data[0].dimensions:
         d.on_change(update_highlight, 'constraintrange')
 
-    return fig #, update_highlight
+    return fig#, update_highlight (return the handle to debug)
 
 
 def test_parallel_coordinates_and_hist(data_frame, columns):
