@@ -102,7 +102,7 @@ def predict(dataset_name, seed: int, estimator_name,
     # Predict train/val/test dataset
     dfs = {
         'train': dm.df_train,
-        'val': dm.df_val,
+        'val': dm.df_vals[0],
         'test': dm.df_test,
     }
     for split in dfs.keys():

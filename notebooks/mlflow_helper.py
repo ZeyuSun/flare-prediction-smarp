@@ -127,3 +127,55 @@ def tensorboard(runs):
     tb = runs['artifact_uri'].str.replace('file://', '') + '/tensorboard'
     dirs = ','.join([f"{idx}_{runs.loc[idx, 'tags.dataset_name']}_{runs.loc[idx, 'tags.estimator_name']}:{tb[idx]}" for idx in tb.index])
     return dirs
+
+
+def paired_ttest(a, b):
+    """
+    H0: a <= b
+    H1: a > b
+    Equivalent to: ttest_rel(a, b, alternative='greater')
+    """
+    import numpy as np
+    from scipy.stats import t
+
+    if isinstance(a, list) or isinstance(a, pd.Series):
+        a = np.array(a)
+    if isinstance(b, list) or isinstance(b, pd.Series):
+        b = np.array(b)
+
+    assert a.ndim == 1
+    assert b.ndim == 1
+    assert a.shape == b.shape
+
+    x = a - b
+    n = len(x)
+    dof = n - 1
+
+    mu = np.mean(x)
+    std = np.std(x, ddof=1)
+    statistic = mu / (std / np.sqrt(n))
+    pvalue = t.sf(statistic, dof) # sf(x) = 1 - cdf(x)
+
+    return statistic, pvalue
+
+
+def get_mask(runs, dataset_names, estimator_names):
+    if isinstance(dataset_names, str):
+        dataset_names = [dataset_names]
+    if isinstance(estimator_names, str):
+        estimator_names = [estimator_names]
+    mask = (
+        runs['dataset'].isin(dataset_names) &
+        runs['estimator'].isin(estimator_names)
+    )
+    return mask
+
+
+def print_pvalues(runs, dataset_name):
+    print(f'Is fused_{dataset_name} better than {dataset_name}?')
+    for estimator_name in ['LSTM', 'CNN']:
+        print(estimator_name)
+        for metric in ['ACC', 'AUC', 'TSS', 'HSS', 'BSS']:
+            a = runs.loc[get_mask(runs, 'fused_'+dataset_name, estimator_name), metric].tolist()
+            b = runs.loc[get_mask(runs, dataset_name, estimator_name), metric].tolist()
+            print(metric, paired_ttest(a, b))
