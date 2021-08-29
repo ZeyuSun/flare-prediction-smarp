@@ -119,6 +119,13 @@ def style(runs, by=None):
 
 
 def typeset(df):
+    """
+    Usage:
+    ```python
+    df = organize(runs, by=by, std=True)
+    print(typeset(df))
+    ```
+    """
     df_latex = df.to_latex(multicolumn_format='c')
     return df_latex
 
@@ -179,3 +186,24 @@ def print_pvalues(runs, dataset_name):
             a = runs.loc[get_mask(runs, 'fused_'+dataset_name, estimator_name), metric].tolist()
             b = runs.loc[get_mask(runs, dataset_name, estimator_name), metric].tolist()
             print(metric, paired_ttest(a, b))
+
+
+def download_figures(runs_raw, dataset_name, seed, estimator_name, output_dir=None):
+    import os, shutil
+
+    output_dir = output_dir or 'temp'
+    os.makedirs(output_dir, exist_ok=True)
+
+    artifact_uri = runs_raw.loc[
+        (runs_raw['tags.dataset_name'] == dataset_name) &
+        (runs_raw['params.DATA.SEED'] == str(seed)) &
+        (runs_raw['tags.estimator_name'] == estimator_name),
+        'artifact_uri'
+    ].iloc[0]
+
+    for figure in ['reliability', 'roc', 'ssp']:
+        artifact_dir = artifact_uri.replace('file://', '')
+        src = os.path.join(artifact_dir, 'test', figure, '0.png')
+        dst = os.path.join(output_dir, f'{seed}_{estimator_name}_{dataset_name}_{figure}.png')
+        # dst = 'temp/LSTM_fused_sharp_1_ssp.png'
+        shutil.copy(src, dst)
