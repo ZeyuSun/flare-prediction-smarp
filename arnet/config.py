@@ -15,7 +15,7 @@ cfg.DATA = CN()
 cfg.DATA.DATABASE = '/home/zeyusun/work/flare-prediction-smarp/datasets/M_Q_24hr'
 cfg.DATA.DATASET = 'sharp'
 cfg.DATA.AUXDATA = '/home/zeyusun/work/flare-prediction-smarp/datasets/sharp2smarp.npy'
-cfg.DATA.BALANCED = True
+cfg.DATA.BALANCED = False
 cfg.DATA.SEED = None
 cfg.DATA.FEATURES = [
     'MAGNETOGRAM',

@@ -155,8 +155,8 @@ def sweep():
     parser.add_argument('-d', '--data_root', default='datasets')
     parser.add_argument('-c', '--config_root', default='arnet/configs')
     parser.add_argument('-s', '--smoke', action='store_true')
-    parser.add_argument('-e', '--experiment_name', default='leaderboard3')
-    parser.add_argument('-r', '--run_name', default='val_tss_2')
+    parser.add_argument('-e', '--experiment_name', default='arnet')
+    parser.add_argument('-r', '--run_name', default='imbalanced')
     parser.add_argument('opts', default=None, nargs=argparse.REMAINDER)
     args = parser.parse_args()
     if args.smoke:
@@ -177,25 +177,22 @@ def sweep():
     mlflow.set_experiment(args.experiment_name)
     with mlflow.start_run(run_name=args.run_name):
         for database in databases:
-            for balanced in [True]:
-                for dataset in ['sharp', 'fused_sharp', 'smarp', 'fused_smarp']:
-                    for config in configs:
-                        for seed in range(5, 10):
-                            opts = [
-                                'DATA.DATABASE', database,
-                                'DATA.DATASET', dataset,
-                                'DATA.BALANCED', balanced,
-                                'DATA.SEED', seed,
-                            ]
-                            run_name = '_'.join([database.name, config.stem, dataset])
-                            with mlflow.start_run(run_name=run_name, nested=True):
-                                tt = time.time()
-                                launch(config, 'train|test', False, args.opts + opts)
-                                mlflow.log_metric('time', time.time() - tt)
-                                mlflow.set_tag('database_name', database.name)
-                                mlflow.set_tag('balanced', balanced)
-                                mlflow.set_tag('estimator_name', config.stem)
-                                mlflow.set_tag('dataset_name', dataset)
+            for dataset in ['sharp', 'fused_sharp']:
+                for config in configs:
+                    for seed in range(5):
+                        opts = [
+                            'DATA.DATABASE', database,
+                            'DATA.DATASET', dataset,
+                            'DATA.SEED', seed,
+                        ]
+                        run_name = '_'.join([database.name, config.stem, dataset])
+                        with mlflow.start_run(run_name=run_name, nested=True):
+                            tt = time.time()
+                            launch(config, 'train|test', False, args.opts + opts)
+                            mlflow.log_metric('time', time.time() - tt)
+                            mlflow.set_tag('database_name', database.name)
+                            mlflow.set_tag('estimator_name', config.stem)
+                            mlflow.set_tag('dataset_name', dataset)
 
     print('Run time: {} s'.format(time.time() - t_start))
 
