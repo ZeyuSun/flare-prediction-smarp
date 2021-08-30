@@ -263,8 +263,8 @@ class Learner(pl.LightningModule):
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
             optimizer,
             mode='max',
-            factor=0.1,
-            patience=5,
+            factor=0.5,
+            patience=3,
             verbose=True,
         )
         return {

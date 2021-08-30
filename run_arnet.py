@@ -156,7 +156,7 @@ def sweep():
     parser.add_argument('-c', '--config_root', default='arnet/configs')
     parser.add_argument('-s', '--smoke', action='store_true')
     parser.add_argument('-e', '--experiment_name', default='leaderboard3')
-    parser.add_argument('-r', '--run_name', default='val_tss_scheduler')
+    parser.add_argument('-r', '--run_name', default='scheduler_more_freq')
     parser.add_argument('opts', default=None, nargs=argparse.REMAINDER)
     args = parser.parse_args()
     if args.smoke:
