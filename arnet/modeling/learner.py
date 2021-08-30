@@ -256,7 +256,24 @@ class Learner(pl.LightningModule):
         return y_prob #y_prob >= 0.5 #self.thresh
 
     def configure_optimizers(self):
-        return torch.optim.Adam(self.parameters(), lr=self.cfg.LEARNER.LEARNING_RATE)
+        optimizer = torch.optim.Adam(
+            self.parameters(),
+            lr=self.cfg.LEARNER.LEARNING_RATE,
+        )
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer,
+            mode='max',
+            factor=0.1,
+            patience=5,
+            verbose=True,
+        )
+        return {
+            'optimizer': optimizer,
+            'lr_scheduler': {
+                'scheduler': scheduler,
+                'monitor': 'validation0/tss',
+            },
+        }
 
     def on_train_end(self):
         for tag, df in self.trainer.datamodule.val_history.items():

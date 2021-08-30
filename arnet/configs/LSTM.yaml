@@ -13,7 +13,7 @@ DATA:
 LEARNER:
   CLASS_WEIGHT: 'balanced'
   LEARNING_RATE: 1e-3
-  PATIENCE: 5
+  PATIENCE: 10
   MODEL:
     NAME: 'SimpleLSTM'
     #SETTINGS: 'cnn'
