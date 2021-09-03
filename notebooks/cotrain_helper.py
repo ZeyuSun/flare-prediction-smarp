@@ -21,33 +21,41 @@ from dashboard_helper import get_learner, inspect_runs, predict, get_transform_f
 
 
 class LevelOneData:
-    """
-    * We don't want seed in __init__. Everytime we change seed we have to retrieve runs again.
-        * But we already have lru_cache around retrieve? And we need to call get_data in __init__, which needs seed.
-    * Seed shouldn't be a state attribute.
-    * I'm going to call get_data separately. Atom. Explicit.
-    * self.dfs is bound to a certain seed. That's why I set it not as an attr. But we would like the class to include dfs because that is the level one data. So I set it as an attr set by get_data(seed). Should it be a dict indexed by seed?
-    """
-    def __init__(self, dataset_names, estimator_names, experiment_name='leaderboard3', run_name='val_tss'):
-        if isinstance(dataset_names, str):
-            dataset_names = [dataset_names]
-        if isinstance(estimator_names, str):
-            estimator_names = [estimator_names]
-        self.selectors = list(product(dataset_names, estimator_names))
-        assert len(self.selectors) == 2
-        self.runs = retrieve(experiment_name, run_name)
-
-    def get_data(self, seed):
+    """Level-1 data class"""
+    def __init__(self, members=None, get_train=False):
+        """
+        Args:
+            members (List[str]): Each string is of format 'experiment/run/dataset/seed/estimator'.
+                If any of the field is empty, it defaults to the previous member (or the default
+                setting for the first member).
+            get_train: Whether to retrieve the train set, which is a bit more time consumuing.
+        """
+        self.members = members
         self.dfs = []
-        for s in self.selectors:
-            selected = self.runs.loc[
-                (self.runs['tags.dataset_name'] == s[0]) &
-                (self.runs['params.DATA.SEED'] == str(seed)) &
-                (self.runs['tags.estimator_name'] == s[1])
+        # selector s
+        s = {
+            'experiment': 'leaderboard3',
+            'run': 'val_tss',
+            'dataset': 'sharp',
+            'seed': '0',
+            'estimator': 'LSTM',
+        }
+        for member in members:
+            for (k, old), new in zip(s.items(), member.split('/')):
+                s[k] = new or s[k] # update if specified
+            print(s.values())
+            runs = retrieve(s['experiment'], s['run'])
+            selected = runs.loc[
+                (runs['tags.dataset_name'] == s['dataset']) &
+                (runs['params.DATA.SEED'] == s['seed']) &
+                (runs['tags.estimator_name'] == s['estimator'])
             ]
             if len(selected) > 1:
                 print('WARNING: more than 1 runs')
-            df_train, df_val, df_test  = get_val_csv(selected.iloc[0])
+            df_train, df_val, df_test  = get_val_csv(
+                selected.iloc[0],
+                get_train,
+            )
             self.dfs.append({
                 'train': df_train,
                 'val': df_val,
@@ -62,7 +70,7 @@ class LevelOneData:
         return X, y
 
 
-def get_val_csv(run):
+def get_val_csv(run, get_train: bool):
     artifact_uri = run['artifact_uri']
     ckpt_path = run['tags.checkpoint']
     ckpt_info = (ckpt_path
@@ -83,17 +91,20 @@ def get_val_csv(run):
     df_test = df_test.rename(columns={f'step-{step}': 'prob'})
     df_test = df_test[[col for col in df_test.columns if 'step-' not in col]]
 
-    learner = Learner.load_from_checkpoint(ckpt_path)
-    kwargs = learner.cfg.TRAINER.todict()
-    # Saved under notebooks/mlruns and notebooks/lightning_logs
-    trainer = pl.Trainer(**kwargs)
-    dm = ActiveRegionDataModule(learner.cfg)
+    if get_train:
+        learner = Learner.load_from_checkpoint(ckpt_path)
+        kwargs = learner.cfg.TRAINER.todict()
+        # Saved under notebooks/mlruns and notebooks/lightning_logs
+        trainer = pl.Trainer(**kwargs)
+        dm = ActiveRegionDataModule(learner.cfg)
 
-    # df_train
-    dl_train = dm.get_dataloader(dm.df_train)
-    y_prob = trainer.predict(learner, dataloaders=dl_train)
-    y_prob = torch.cat(y_prob).detach().cpu().numpy()
-    df_train = dm.df_train.assign(prob=y_prob)
+        # df_train
+        dl_train = dm.get_dataloader(dm.df_train)
+        y_prob = trainer.predict(learner, dataloaders=dl_train)
+        y_prob = torch.cat(y_prob).detach().cpu().numpy()
+        df_train = dm.df_train.assign(prob=y_prob)
+    else:
+        df_train = None
 
     return df_train, df_val, df_test
 
