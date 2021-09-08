@@ -1,3 +1,4 @@
+from typing import Union
 import pandas as pd
 from uncertainties import ufloat
 import mlflow
@@ -21,7 +22,9 @@ def get_columns(name):
     return columns
 
 
-def retrieve(experiment_name, parent_run_name, p=0):
+def retrieve(experiment_name, parent_run_name, p=None):
+    """p=0: Union[int, list, tuple, slice] doesn't work: Invalid Syntax"""
+    """list/slice is not hashable by lru_cache"""
     # Get runs of an experiment
     exp_id = client.get_experiment_by_name(experiment_name).experiment_id
     runs = mlflow.search_runs(exp_id)
@@ -33,13 +36,16 @@ def retrieve(experiment_name, parent_run_name, p=0):
         unique_run_names = runs['tags.mlflow.runName'].unique()
         print(f"No parentRunName {parent_run_name} in {unique_run_names}")
         raise
-    else:
-        print('Select iloc {} from \n{}'.format(
-            p,
-            parent_runs[['start_time', 'tags.mlflow.runName', 'tags.mlflow.source.git.commit']]))
-        parentRunId = parent_runs['run_id'].iloc[p]
 
-    runs = runs.loc[(runs['tags.mlflow.parentRunId'] == parentRunId) &
+    p = p or slice(None)
+    p = [p] if isinstance(p, int) else p
+    print('Select iloc {} from \n{}'.format(
+        p,
+        parent_runs[['start_time', 'tags.mlflow.runName']])) #, 'tags.mlflow.source.git.commit']]))
+        # may not be a git repo. Do not add it in.
+
+    parentRunId = parent_runs['run_id'].iloc[p]
+    runs = runs.loc[(runs['tags.mlflow.parentRunId'].isin(parentRunId)) &
                     (runs['status'] == 'FINISHED')]
     return runs
 
@@ -186,6 +192,26 @@ def print_pvalues(runs, dataset_name):
             a = runs.loc[get_mask(runs, 'fused_'+dataset_name, estimator_name), metric].tolist()
             b = runs.loc[get_mask(runs, dataset_name, estimator_name), metric].tolist()
             print(metric, paired_ttest(a, b))
+
+
+def tabulate_pvalues(runs):
+    items = []
+    for dataset_name in ['sharp', 'smarp']:
+        for estimator_name in ['LSTM', 'CNN']:
+            for metric in ['ACC', 'AUC', 'TSS', 'HSS', 'BSS']:
+                a = runs.loc[get_mask(runs, 'fused_'+dataset_name, estimator_name), metric].tolist()
+                b = runs.loc[get_mask(runs, dataset_name, estimator_name), metric].tolist()
+                statistic, pvalue = paired_ttest(a, b)
+                items.append({
+                    'S': metric,
+                    'estimator': estimator_name,
+                    'tested hypothesis': f'S(fused_{dataset_name}) > S({dataset_name})',
+                    't': statistic,
+                    'p-value': pvalue
+                })
+    df = pd.DataFrame(items)
+    return df
+    #df.set_index(['S', 'estimator', 'tested hypothesis'])
 
 
 def download_figures(runs_raw, dataset_name, seed, estimator_name, output_dir=None):

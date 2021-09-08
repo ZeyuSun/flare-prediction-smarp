@@ -6,6 +6,13 @@ from plotly.subplots import make_subplots
 def parallel_coordinates_and_hist(*args, **kwargs):
     """
     Augment parallel_coordinates with histograms
+    
+    Args:
+        df: dataframe
+        dimensions: column names
+        color: the column name for coloring the parallel coordinate plot
+        color_hist: the column name for coloring the hist
+        
     TODO:
     1. Now we color hist by labels. We should generalize to any feature. See "Augmenting parallel coordinates plots with color-coded stacked histograms" (Bok 2020). One function to consider is go.Bar. See the following sample code from ["Continuous Color Scales and Color Bars in Python
 "](https://plotly.com/python/colorscales/):
@@ -22,6 +29,7 @@ def parallel_coordinates_and_hist(*args, **kwargs):
     df = args[0]
     #df['label'] = df['label'].astype(int) # should be done outside
     dimensions = kwargs['dimensions']
+    color_hist = kwargs.pop('color_hist', 'label')
 
     # Make subplots
     cols = len(dimensions)
@@ -39,7 +47,7 @@ def parallel_coordinates_and_hist(*args, **kwargs):
         fig_hist = px.histogram(
             df,
             y=dimensions[j],
-            color='label',
+            color=color_hist,
             color_discrete_map={0: 'steelblue', 1: 'firebrick'}
         )
         fig_hist.data = sorted(fig_hist.data, key=lambda hist: hist.legendgroup)
