@@ -6,7 +6,8 @@ from functools import lru_cache
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-from sklearn.metrics import roc_auc_score
+from sklearn.metrics import roc_auc_score, log_loss, hinge_loss
+import requests
 import plotly
 import plotly.express as px
 from plotly.subplots import make_subplots
@@ -88,6 +89,15 @@ def add_separating_line(fig, alpha, dash='solid'):
             name=f'alpha = {alpha:.3f}'
         )
     )
+
+
+def get_split(dfs, split):
+    """Used in paracoord"""
+    df_fig = dfs['LSTM'][split].copy()
+    df_fig = df_fig.rename(columns={'prob': 'LSTM prob'})
+    df_fig['label'] = df_fig['label'].astype(bool)
+    df_fig['CNN prob'] = dfs['CNN'][split]['prob']
+    return df_fig
 
 
 def get_val_csv(run, get_train: bool):
@@ -283,11 +293,13 @@ def get_metrics(y_true, y_prob):
     y_clim = np.mean(y_true)
     bss = 1 - np.mean((y_prob - y_true)**2) / np.mean((y_prob - y_clim)**2)
 
-    cross_entropy = np.mean(
-        -np.log(np.where(y_true, y_prob, 1-y_prob)))
+    cross_entropy = log_loss(y_true, y_prob, normalize=True)
+    # takes care of 0log0 and 1log0
 
     hinge = np.mean(
         np.maximum(0, 1 - np.where(y_true, y_prob, -y_prob)))
+    hinge_2 = hinge_loss(y_true * 2 - 1, y_prob)
+    assert(np.abs(hinge - hinge_2) < 1e-10)
 
     metrics = {
         'acc': acc,
@@ -398,7 +410,7 @@ class MetaLearner:
         """
         pass
 
-def meta_learn(levelone, train=False, run_name='temp'):
+def meta_learn(levelone, train=False, axis_titles=None, run_name='temp'):
     mlflow.set_experiment('stacking')
     with mlflow.start_run(run_name=run_name):
         # Load data
@@ -408,8 +420,8 @@ def meta_learn(levelone, train=False, run_name='temp'):
         X_test, y_test, df_test = levelone.get_split('test', return_df=True)
 
         if train:
-            fig = plot_level_one_naive(X_train, y_train, meta=df_train)
-            mlflow.log_figure(fig, 'data_train.png')
+            fig = plot_level_one_naive(X_train, y_train, axis_titles=axis_titles, meta=df_train)
+            mlflow.log_figure(fig, 'data_train.html')
 
         settings = [
             ['cross_entropy', 'min'],
@@ -456,7 +468,7 @@ def meta_learn(levelone, train=False, run_name='temp'):
                 #fig = ml.inspect('convergence', filename=None)
                 #mlflow.log_figure(fig, tag + 'convergence_val.png')
 
-                fig = plot_level_one_naive(X_val, y_val, meta=df_val)
+                fig = plot_level_one_naive(X_val, y_val, axis_titles=axis_titles, meta=df_val)
                 add_separating_line(fig, ml.alpha, dash='solid')
                 mlflow.log_figure(fig, tag + 'data_val.html') #png doesn't work
 
@@ -476,14 +488,46 @@ def meta_learn(levelone, train=False, run_name='temp'):
                 #fig = ml_test.inspect('convergence', filename=None)
                 #mlflow.log_figure(fig, tag + 'convergence_test.png')
 
-                fig = plot_level_one_naive(X_val, y_val, meta=df_val)
+                fig = plot_level_one_naive(X_test, y_test, axis_titles=axis_titles, meta=df_test)
                 add_separating_line(fig, ml.alpha, dash='solid')
                 add_separating_line(fig, ml_test.alpha, dash='dash')
                 mlflow.log_figure(fig, tag + 'data_test.html')
 
 
-#if __name__ == '__main__':
-#    for dataset_name in ['sharp', 'fused_sharp', 'smarp', 'fused_smarp']:
-#        for seed in range(5):
-#            members = [
-#                f'leaderboard3/val_tss/{dataset_name}
+def retrieve_metrics(run_id, metric_key):
+    api_url = f'http://localhost:5000/api/2.0/mlflow/metrics/get-history?run_id={run_id}&metric_key={metric_key}'
+    response = requests.get(api_url)
+    resp = response.json()
+    metrics = [m['value'] for m in resp['metrics']]
+    return metrics
+
+
+if __name__ == '__main__':
+    for dataset_name in ['sharp', 'fused_sharp', 'smarp', 'fused_smarp']:
+        for seed in range(5):
+            members = [
+                f'leaderboard3/val_tss/{dataset_name}/{seed}/LSTM',
+                f'////CNN'
+            ]
+            axis_titles = ['LSTM predicted probability', 'CNN predicted probability']
+            levelone = LevelOneData(members, get_train=True)
+            meta_learn(levelone, train=True, axis_titles=axis_titles, run_name='estimator')
+
+    for dataset_name in ['sharp', 'fused_sharp', 'smarp', 'fused_smarp']:
+        for seed in range(5, 10):
+            members = [
+                f'leaderboard3/val_tss_2/{dataset_name}/{seed}/LSTM',
+                f'////CNN'
+            ]
+            axis_titles = ['LSTM', 'CNN']
+            levelone = LevelOneData(members, get_train=True)
+            meta_learn(levelone, train=True, axis_titles=axis_titles, run_name='estimator_2')
+
+    # Figure remaking
+    #members = [
+    #    f'leaderboard3/val_tss_2/fused_sharp/8/LSTM',
+    #    f'////CNN'
+    #]
+    #axis_titles = ['LSTM predicted probability', 'CNN predicted probability']
+    #levelone = LevelOneData(members, get_train=True)
+    #meta_learn(levelone, train=True, axis_titles=axis_titles, run_name='estimator_2_seed_8')
