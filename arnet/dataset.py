@@ -172,7 +172,10 @@ class ActiveRegionDataModule(pl.LightningDataModule):
             self.cfg.DATA.AUXDATA,
             sizes='balanced' if self.cfg.DATA.BALANCED else None,
             validation=True,
-            seed=self.cfg.DATA.SEED)
+            seed=self.cfg.DATA.SEED,
+            val_split=self.cfg.DATA.VAL_SPLIT,
+            test_split=self.cfg.DATA.TEST_SPLIT,
+        )
         df_vals = [df_val, df_test]
 
         # Set attributes

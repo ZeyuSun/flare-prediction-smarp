@@ -30,6 +30,21 @@ def group_split_data(df, seed=None):
     return df.iloc[train_idx], df.iloc[test_idx]
 
 
+def group_split_data_cv(df, cv=5, split=0):
+    """
+    Args:
+        cv: number of cv folds
+        split: index of the cv fold to return
+    Note that GroupKFold is not random
+    """
+    from sklearn.model_selection import GroupKFold
+    splitter = GroupKFold(n_splits=cv)
+    split_generator = splitter.split(df, groups=df['arpnum'])
+    for k, (train_idx, test_idx) in enumerate(split_generator):
+        if k == split:
+            return df.iloc[train_idx], df.iloc[test_idx]
+
+
 def rus(df, sizes='balanced', seed=False):
     """Random Undersampling
 
@@ -56,7 +71,9 @@ def rus(df, sizes='balanced', seed=False):
 
 
 def get_datasets(database, dataset, auxdata,
-                 sizes=None, validation=False, shuffle=False, seed=None):
+                 sizes=None, validation=False, shuffle=False, seed=None,
+                 val_split=0, test_split=0,
+    ):
     """
     Args:
         sizes: Dict of desired class sizes. None: no rus. 'balanced': balanced rus.
@@ -66,16 +83,17 @@ def get_datasets(database, dataset, auxdata,
     fuse_dict = load_fusion_dataset(Path(auxdata))
     df_sharp = fuse_sharp_to_smarp(df_sharp, fuse_dict)
 
+    # Cross validation split. No randomness.
     if dataset in ['sharp', 'fused_sharp']:
-        df_train, df_test = group_split_data(df_sharp, seed=seed)
+        df_train, df_test = group_split_data_cv(df_sharp, cv=5, split=test_split)
         if validation:
-            df_train, df_val = group_split_data(df_train, seed=seed)
+            df_train, df_val = group_split_data_cv(df_train, cv=5, split=val_split)
         if dataset == 'fused_sharp':
             df_train = pd.concat((df_train, df_smarp)).reset_index(drop=True)
     elif dataset in ['smarp', 'fused_smarp']:
-        df_train, df_test = group_split_data(df_smarp, seed=seed)
+        df_train, df_test = group_split_data_cv(df_smarp, cv=5, split=test_split)
         if validation:
-            df_train, df_val = group_split_data(df_train, seed=seed)
+            df_train, df_val = group_split_data_cv(df_train, cv=5, split=val_split)
         if dataset == 'fused_smarp':
             df_train = pd.concat((df_train, df_sharp)).reset_index(drop=True)
 

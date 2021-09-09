@@ -17,6 +17,8 @@ cfg.DATA.DATASET = 'sharp'
 cfg.DATA.AUXDATA = '/home/zeyusun/work/flare-prediction-smarp/datasets/sharp2smarp.npy'
 cfg.DATA.BALANCED = True
 cfg.DATA.SEED = None
+cfg.DATA.VAL_SPLIT = 0
+cfg.DATA.TEST_SPLIT = 0
 cfg.DATA.FEATURES = [
     'MAGNETOGRAM',
     #'AREA', 'USFLUXL', 'MEANGBL', 'R_VALUE',
