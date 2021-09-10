@@ -156,7 +156,7 @@ def sweep():
     parser.add_argument('-c', '--config_root', default='arnet/configs')
     parser.add_argument('-s', '--smoke', action='store_true')
     parser.add_argument('-e', '--experiment_name', default='cv')
-    parser.add_argument('-r', '--run_name', default='cv')
+    parser.add_argument('-r', '--run_name', default='base')
     parser.add_argument('opts', default=None, nargs=argparse.REMAINDER)
     args = parser.parse_args()
     if args.smoke:
@@ -174,6 +174,7 @@ def sweep():
     databases = [Path(args.data_root).absolute() / d for d in ['M_Q_24hr']]
     #configs = [c for c in Path(args.config_root).iterdir()]
     configs = [Path('arnet/configs').absolute() / f'{c}.yaml' for c in ['LSTM', 'CNN']]
+    test_splits = range(5)
     val_splits = range(5)
     mlflow.set_experiment(args.experiment_name)
     with mlflow.start_run(run_name=args.run_name):
@@ -181,23 +182,25 @@ def sweep():
             for balanced in [True]:
                 for dataset in ['sharp', 'fused_sharp', 'smarp', 'fused_smarp']:
                     for config in configs:
-                        for val_split in val_splits:
-                            opts = [
-                                'DATA.DATABASE', database,
-                                'DATA.DATASET', dataset,
-                                'DATA.BALANCED', balanced,
-                                'DATA.SEED', 0, # used in data rus and training
-                                'DATA.VAL_SPLIT', val_split, # test_split defaults to 0
-                            ]
-                            run_name = '_'.join([database.name, config.stem, dataset])
-                            with mlflow.start_run(run_name=run_name, nested=True):
-                                tt = time.time()
-                                launch(config, 'train|test', False, args.opts + opts)
-                                mlflow.log_metric('time', time.time() - tt)
-                                mlflow.set_tag('database_name', database.name)
-                                mlflow.set_tag('balanced', balanced)
-                                mlflow.set_tag('estimator_name', config.stem)
-                                mlflow.set_tag('dataset_name', dataset)
+                        for test_split in test_splits:
+                            for val_split in val_splits:
+                                opts = [
+                                    'DATA.DATABASE', database,
+                                    'DATA.DATASET', dataset,
+                                    'DATA.BALANCED', balanced,
+                                    'DATA.SEED', 0, # used in data rus and training
+                                    'DATA.TEST_SPLIT', test_split,
+                                    'DATA.VAL_SPLIT', val_split,
+                                ]
+                                run_name = '_'.join([database.name, config.stem, dataset])
+                                with mlflow.start_run(run_name=run_name, nested=True):
+                                    tt = time.time()
+                                    launch(config, 'train|test', False, args.opts + opts)
+                                    mlflow.log_metric('time', time.time() - tt)
+                                    mlflow.set_tag('database_name', database.name)
+                                    mlflow.set_tag('balanced', balanced)
+                                    mlflow.set_tag('estimator_name', config.stem)
+                                    mlflow.set_tag('dataset_name', dataset)
 
     print('Run time: {} s'.format(time.time() - t_start))
 
