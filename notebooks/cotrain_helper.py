@@ -511,7 +511,7 @@ if __name__ == '__main__':
             ]
             axis_titles = ['LSTM predicted probability', 'CNN predicted probability']
             levelone = LevelOneData(members, get_train=True)
-            meta_learn(levelone, train=True, axis_titles=axis_titles, run_name='estimator')
+            meta_learn(levelone, train=True, axis_titles=axis_titles, run_name='FN_bug')
 
     for dataset_name in ['sharp', 'fused_sharp', 'smarp', 'fused_smarp']:
         for seed in range(5, 10):
@@ -521,7 +521,7 @@ if __name__ == '__main__':
             ]
             axis_titles = ['LSTM', 'CNN']
             levelone = LevelOneData(members, get_train=True)
-            meta_learn(levelone, train=True, axis_titles=axis_titles, run_name='estimator_2')
+            meta_learn(levelone, train=True, axis_titles=axis_titles, run_name='FN_bug_2')
 
     # Figure remaking
     #members = [
