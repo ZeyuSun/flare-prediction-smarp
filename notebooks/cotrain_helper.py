@@ -302,7 +302,7 @@ def get_metrics(y_true, y_prob):
     TP = np.sum(np.logical_and(y_true, y_pred))
     TN = np.sum(np.logical_and(~y_true, ~y_pred))
     FP = np.sum(np.logical_and(~y_true, y_pred))
-    FN = np.sum(np.logical_and(~y_true, y_pred))
+    FN = np.sum(np.logical_and(y_true, ~y_pred))
 
     acc = (TP + TN) / (TP + TN + FP + FN)
 
