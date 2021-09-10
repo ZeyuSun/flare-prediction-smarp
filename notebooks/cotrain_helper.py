@@ -304,6 +304,9 @@ def get_metrics(y_true, y_prob):
     FP = np.sum(np.logical_and(~y_true, y_pred))
     FN = np.sum(np.logical_and(y_true, ~y_pred))
 
+    precision = TP / (TP + FP)
+    recall = TP / (TP + FN)
+    f1 = 2 * precision * recall / (precision + recall)
     acc = (TP + TN) / (TP + TN + FP + FN)
 
     pod = TP / (TP + FN)
@@ -324,6 +327,9 @@ def get_metrics(y_true, y_prob):
     assert(np.abs(hinge - hinge_2) < 1e-10)
 
     metrics = {
+        'precision': precision,
+        'recall': recall,
+        'f1': f1,
         'acc': acc,
         'tss': tss,
         'auc': auc,

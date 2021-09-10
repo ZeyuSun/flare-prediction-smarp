@@ -260,6 +260,8 @@ class Learner(pl.LightningModule):
 
     def on_train_end(self):
         for tag, df in self.trainer.datamodule.val_history.items():
+            if tag == 'test':
+                continue # val_history['test'] does not update every epoch.
             tmp_path = 'outputs/val_predictions.csv'
             df.to_csv(tmp_path)
             mlflow.log_artifact(tmp_path, tag) # tag in ['validation0', ..., 'test']
