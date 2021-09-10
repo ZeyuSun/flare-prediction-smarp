@@ -112,12 +112,16 @@ def get_val_csv(run, get_train: bool):
     epoch, step = int(ckpt_info[1]), int(ckpt_info[3])
 
     # df_val
-    df_val = pd.read_csv(Path(artifact_uri) / 'validation0' / 'val_predictions.csv')
+    # csv format:
+    # ,prefix,arpnum,...
+    # 0,HARP,338,...
+    # 1,HARP,366,...
+    df_val = pd.read_csv(Path(artifact_uri) / 'validation0' / 'val_predictions.csv', index_col=0)
     df_val = df_val.rename(columns={f'step-{step}': 'prob'})
     df_val = df_val[[col for col in df_val.columns if 'step-' not in col]]
 
     # df_test
-    df_test = pd.read_csv(Path(artifact_uri) / 'validation1' / 'val_predictions.csv')
+    df_test = pd.read_csv(Path(artifact_uri) / 'validation1' / 'val_predictions.csv', index_col=0)
     df_test = df_test.rename(columns={f'step-{step}': 'prob'})
     df_test = df_test[[col for col in df_test.columns if 'step-' not in col]]
 
@@ -145,7 +149,7 @@ class LevelOneData:
         """
         Args:
             members (List[str]): Each string is of format
-                'experiment/run/dataset/seed/estimator'. If any of the field is
+                'experiment/run/dataset/seed/val_split/estimator'. If any of the field is
                 empty, it defaults to the previous member (or the default
                 setting for the first member).
             get_train: Whether to retrieve the train set, which is a bit more
@@ -155,10 +159,11 @@ class LevelOneData:
         self.dfs = []
         # selector s
         s = {
-            'experiment': 'leaderboard3',
-            'run': 'val_tss',
-            'dataset': 'sharp',
+            'experiment': 'cv',
+            'run': 'cv',
+            'dataset': 'fused_sharp',
             'seed': '0',
+            'val_split': '0',
             'estimator': 'LSTM',
         }
         self.selectors = []
@@ -171,6 +176,7 @@ class LevelOneData:
             selected = runs.loc[
                 (runs['tags.dataset_name'] == s['dataset']) &
                 (runs['params.DATA.SEED'] == s['seed']) &
+                (runs['params.DATA.VAL_SPLIT'] == s['val_split']) &
                 (runs['tags.estimator_name'] == s['estimator'])
             ]
             if len(selected) > 1:
@@ -186,6 +192,7 @@ class LevelOneData:
             })
 
     def get_split(self, split, return_df=False):
+        """Used when the split of all dfs are on the same sample"""
         X = np.vstack([member[split]['prob'] for member in self.dfs]).T
         
         labels = np.vstack([member[split]['label'] for member in self.dfs]).T
@@ -196,6 +203,21 @@ class LevelOneData:
         dataframes = [member[split][cols] for member in self.dfs]
         df = dataframes[0]
         assert(all([df.equals(dataframe) for dataframe in dataframes]))
+        
+        if return_df:
+            return X, y, df
+        else:
+            return X, y
+
+        
+    def combine_split(self, split, return_df=False):
+        """Used when the split of dfs are a partition of a sample.
+        So the same attributes are accumulated along the rows.
+        Used when LevelOneData contains cv members.
+        """
+        df = pd.concat([member[split] for member in self.dfs])
+        X = df['prob']
+        y = df['label']
         
         if return_df:
             return X, y, df
@@ -347,7 +369,7 @@ class MetaLearner:
         #        g, h, proj, self.alpha, fun=f)
         #else:
         N = 100
-        alphas = np.linspace(0, 1, N)
+        alphas = np.linspace(0, 1, N) #+1)
         self.metrics = []
         for alpha in alphas:
             y_prob = X.dot([alpha, 1-alpha])
@@ -409,6 +431,7 @@ class MetaLearner:
         saving you lots of time coding, debugging, and thinking.
         """
         pass
+
 
 def meta_learn(levelone, train=False, axis_titles=None, run_name='temp'):
     mlflow.set_experiment('stacking')
@@ -494,11 +517,49 @@ def meta_learn(levelone, train=False, axis_titles=None, run_name='temp'):
                 mlflow.log_figure(fig, tag + 'data_test.html')
 
 
-def retrieve_metrics(run_id, metric_key):
+def retrieve_run(query):
+    """
+    Args:
+        members (List[str]): Each string is of format
+                'experiment/run/dataset/seed/val_split/estimator'. If any of the field is
+                empty, it defaults to the previous member (or the default
+                setting for the first member).
+                
+    Returns:
+        run (pd.Series)
+    """
+    s = dict(zip(['experiment', 'run', 'dataset', 'seed', 'val_split', 'estimator'],
+                 query.split('/')))
+    runs = retrieve(s['experiment'], s['run'])
+    selected = runs.loc[
+        (runs['tags.dataset_name'] == s['dataset']) &
+        (runs['params.DATA.SEED'] == s['seed']) &
+        (runs['params.DATA.VAL_SPLIT'] == s['val_split']) &
+        (runs['tags.estimator_name'] == s['estimator'])
+    ]
+    if len(selected) > 1:
+        print('WARNING: more than 1 runs')
+    run = selected.iloc[0]
+    return run
+
+
+def retrieve_metrics(run_id, metric_key, steps=None):
     api_url = f'http://localhost:5000/api/2.0/mlflow/metrics/get-history?run_id={run_id}&metric_key={metric_key}'
     response = requests.get(api_url)
     resp = response.json()
-    metrics = [m['value'] for m in resp['metrics']]
+    if steps is None:
+        metrics = [item['value'] for item in resp['metrics']]
+    else:
+        values = {item['step']: item['value'] for item in resp['metrics']}
+        metrics = [values.get(step, None) for step in steps]
+    return metrics
+
+
+def retrieve_metrics_all(run_id, metric_key):
+    api_url = f'http://localhost:5000/api/2.0/mlflow/metrics/get-history?run_id={run_id}&metric_key={metric_key}'
+    response = requests.get(api_url)
+    resp = response.json()
+    metrics = resp['metrics']
     return metrics
 
 
