@@ -100,6 +100,32 @@ def get_split(dfs, split):
     return df_fig
 
 
+def get_learner_by_query(query):
+    s = {
+        'experiment': 'cv',
+        'run': 'cv',
+        'dataset': 'fused_sharp',
+        'seed': '0',
+        'val_split': '0',
+        'estimator': 'LSTM',
+    }
+    for (k, old), new in zip(s.items(), query.split('/')):
+        s[k] = new or s[k] # update if specified
+    print(s.values())
+    runs = retrieve(s['experiment'], s['run'])
+    selected = runs.loc[
+        (runs['tags.dataset_name'] == s['dataset']) &
+        (runs['params.DATA.SEED'] == s['seed']) &
+        (runs['params.DATA.VAL_SPLIT'] == s['val_split']) &
+        (runs['tags.estimator_name'] == s['estimator'])
+    ]
+    if len(selected) > 1:
+        print('WARNING: more than 1 runs')
+    ckpt_path = selected['tags.checkpoint'].iloc[0]
+    learner = Learner.load_from_checkpoint(ckpt_path)
+    return learner
+
+
 def get_val_csv(run, get_train: bool):
     artifact_uri = run['artifact_uri']
     ckpt_path = run['tags.checkpoint']
