@@ -1,5 +1,8 @@
+from datetime import datetime, timedelta
 from ipdb import set_trace as breakpoint
 import numpy as np
+import pandas as pd
+import xarray as xr
 import torch
 from skimage.transform import resize
 from captum.attr import IntegratedGradients, Saliency, DeepLift, GuidedGradCam, NoiseTunnel, LayerGradCam, LayerLRP
@@ -87,7 +90,49 @@ def get_heatmap(algorithm, learner, input, target):
     return heatmap
 
 
-def plot_heatmaps(imgs, zmin, zmax, color_continuous_scale):
+def get_t_steps(t_now: str):
+    num_frames, num_frames_after = 16, 15
+    dt = timedelta(minutes=96)
+    t_now = datetime.strptime(t_now, '%Y-%m-%d %H:%M:%S')
+    t_start = t_now - dt * (num_frames - 1)
+    t_end = t_now + dt * num_frames_after
+    t_steps = pd.date_range(t_start, t_end, freq='96min').values.astype('datetime64[s]') #otherwise its [ns]. Will convert to it in xarray anyway.
+    return t_steps
+    
+    
+def plot_heatmaps_info(imgs, algorithms, info,
+                       zmin, zmax, color_continuous_scale,
+                       animation_frame=None):
+    if animation_frame is not None:
+        t_steps = get_t_steps(info['t_end'])
+        dims = ('Algorithm', 'Time', 'h', 'w')
+        coords = {'Algorithm': algorithms, 'Time': t_steps}
+    else:
+        dims = ('Algorithm', 'h', 'w')
+        coords = {'Algorithm': algorithms}
+    imgs = xr.DataArray(imgs, dims=dims, coords=coords)
+    fig = plot_heatmaps(imgs, zmin, zmax, color_continuous_scale,
+                        animation_frame=animation_frame, # 1 or None
+                        facet_col=0)
+    
+    val_split = info['model_query'].split('/')[4]
+    prob = info['prob' + val_split]
+    label = info['label']
+    fig = add_label(fig, label, label_color="Red" if label else "Green")
+    fig = add_pred(fig, prob, pred_color="Red" if prob > 0.5 else "Green")
+    fig.update_layout(
+        #dragmode='drawopenpath',
+        newshape=dict(line_color='cyan'),
+        #height=600,
+        # width=300,
+    )
+    #fig.show(
+    #    config={'modeBarButtonsToAdd':['drawopenpath', 'eraseshape']}
+    #)
+    return fig
+
+
+def plot_heatmaps(imgs, zmin, zmax, color_continuous_scale, animation_frame=None, facet_col=None):
     """
     Args:
         imgs: np.ndarray of shape (N, H, W)
@@ -112,9 +157,10 @@ def plot_heatmaps(imgs, zmin, zmax, color_continuous_scale):
         imgs,
         zmin=zmin,
         zmax=zmax,
-        facet_col=0,
+        animation_frame=animation_frame,
+        facet_col=facet_col,
         facet_col_spacing=0.05, # default to 0.02
-        facet_col_wrap=3,
+        #facet_col_wrap=3,
         binary_string=False,
         color_continuous_scale=color_continuous_scale,
         aspect='equal', # None means 'equal' for ndarray but 'auto' for xarray
@@ -169,7 +215,13 @@ def plot_heatmaps(imgs, zmin, zmax, color_continuous_scale):
     return fig
 
 
-def add_label(fig, label, label_color):
+def add_label(fig, label, label_color=None):
+    fig.add_shape(
+        type='rect',
+        x0=0, x1=127, y0=0, y1=127,
+        line=dict(color=label_color, width=3),
+        row=0, col=1
+    )
     fig.add_annotation(
         text='Label {}'.format('+' if label else '-'),
         bgcolor=label_color,
@@ -183,19 +235,13 @@ def add_label(fig, label, label_color):
     return fig
 
     
-def add_pred(fig, prob, pred_color):
-    fig.add_shape(
-        type='rect',
-        x0=0, x1=127, y0=0, y1=127,
-        line=dict(color=pred_color, width=3),
-        row=0, col=1
-    )
+def add_pred(fig, prob, pred_color=None):
     fig.add_annotation(
         text=f'Prob {prob:.4f}',
         bgcolor=pred_color,
         xref="x domain", yref="y domain",
-        x=1, y=1,
-        xanchor='right', yanchor='top',
+        x=1, y=0,
+        xanchor='right', yanchor='bottom',
         font=dict(color='White', size=12),
         showarrow=False,
         row=0, col=1,
