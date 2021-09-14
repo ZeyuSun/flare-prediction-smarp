@@ -59,7 +59,7 @@ class ActiveRegionDataset(Dataset):
         num_frames: Number of frames before t_end to use.
         transforms (callable): Transform to apply to samples.
     """
-    def __init__(self, df_sample, features=None, num_frames=16, transform=None):
+    def __init__(self, df_sample, features=None, num_frames=16, num_frames_after=0, transform=None):
         # Default values and assertions
         features = features or ['MAGNETOGRAM']
         assert 1 <= num_frames <= 16, 'num_frames not in [1,16]'
@@ -69,6 +69,7 @@ class ActiveRegionDataset(Dataset):
         self.yield_video = 'MAGNETOGRAM' in features
         self.yield_parameters = len(self.parameters) > 0
         self.num_frames = num_frames
+        self.num_frames_after = num_frames_after
         self.transform = transform
 
     def __len__(self):
@@ -97,9 +98,11 @@ class ActiveRegionDataset(Dataset):
         meta = f'{idx}_{s["prefix"]}{s["arpnum"]:06d}_{t_end}_H0_W0_{largest_flare}.npy'
         return *data_list, label, meta
 
-    def load_video(self, prefix, arpnum, t_end, bad_img_idx):
-        t_end = drms.to_datetime(t_end)
-        t_start = t_end - timedelta(minutes=96) * (self.num_frames - 1)
+    def load_video(self, prefix, arpnum, t_now, bad_img_idx):
+        t_now = drms.to_datetime(t_now)
+        dt = timedelta(minutes=96)
+        t_start = t_now - dt * (self.num_frames - 1)
+        t_end = t_now + dt * self.num_frames_after
         t_steps = pd.date_range(t_start, t_end, freq='96min').strftime('%Y%m%d_%H%M%S_TAI')
         filenames = [f"{SERIES[prefix]}.{arpnum}.{t}.magnetogram.fits"
                      for t in t_steps]
@@ -116,9 +119,11 @@ class ActiveRegionDataset(Dataset):
             video = self.transform(video)
         return video, size
 
-    def load_parameters(self, prefix, arpnum, t_end):
-        t_end = datetime.strptime(t_end, '%Y-%m-%d %H:%M:%S') #2013-07-03 01:36:00
-        t_start = t_end - timedelta(minutes=96) * (self.num_frames - 1)
+    def load_parameters(self, prefix, arpnum, t_now):
+        t_now = datetime.strptime(t_now, '%Y-%m-%d %H:%M:%S') #2013-07-03 01:36:00
+        dt = timedelta(minutes=96)
+        t_start = t_now - dt * (self.num_frames - 1)
+        t_end = t_now + dt * self.num_frames_after
         t_recs = pd.date_range(t_start, t_end, freq='96min').strftime('%Y.%m.%d_%H:%M:%S_TAI')
         df = query_parameters(prefix, arpnum, t_recs, self.parameters)
         df = df.fillna(method='bfill')
