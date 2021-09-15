@@ -8,13 +8,18 @@ from skimage.transform import resize
 from captum.attr import IntegratedGradients, Saliency, DeepLift, GuidedGradCam, NoiseTunnel, LayerGradCam, LayerLRP
 
 
-def get_heatmap(algorithm, learner, input, target):
+def get_heatmap(algorithm, learner, input, target='negate'):
     """
     TODO: heatmaps should only have 1 channels
     """
     model = learner.model
     model.eval()
-    model.zero_grad()    
+    model.zero_grad()
+    if target == 'negate':
+        logit = model(input)
+        pred = logit[:, 1] > logit[:, 0]
+        target = 1 - pred.to(int)
+
     if algorithm == 'Original':
         heatmap = input
     elif algorithm == 'Saliency':
