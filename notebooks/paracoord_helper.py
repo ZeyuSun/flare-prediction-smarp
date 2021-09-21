@@ -1,6 +1,8 @@
+import numpy as np
 import plotly.graph_objects as go
 import plotly.express as px
 from plotly.subplots import make_subplots
+from ipdb import set_trace as breakpoint
 
 
 def parallel_coordinates_and_hist(*args, **kwargs):
@@ -25,11 +27,20 @@ def parallel_coordinates_and_hist(*args, **kwargs):
     fig.show()
     ```
     2. Responsive histogram. Hover on one axis show its histogram. Show the histogram of only highlighted lines. Visualize the images of the highlighted images. One potential tool is FigureWidget.
+    https://community.plotly.com/t/linking-and-brushing-between-parallel-coordinate-and-scatterplot/38047
     """
     df = args[0]
     #df['label'] = df['label'].astype(int) # should be done outside
     dimensions = kwargs['dimensions']
-    color_hist = kwargs.pop('color_hist', 'label')
+    color_hist = kwargs.pop('color_hist', None) #'label'
+    if color_hist is None:
+        labels = np.zeros(len(df))
+    elif isinstance(color_hist, str):
+        labels = df[color_hist]
+    else: # e.g., series or ndarray
+        labels = color_hist
+    labels_unique = np.unique(labels)
+    # after this labels would be series or ndarray
 
     # Make subplots
     cols = len(dimensions)
@@ -41,13 +52,14 @@ def parallel_coordinates_and_hist(*args, **kwargs):
     # Parallel coordinates
     pc = px.parallel_coordinates(*args, **kwargs)
     fig.add_trace(pc.data[0], row=1, col=1)
+    fig.update_layout(pc.layout)
 
     # Histograms
     for j in range(cols):
         fig_hist = px.histogram(
             df,
             y=dimensions[j],
-            color=color_hist,
+            color=labels,
             color_discrete_map={0: 'steelblue', 1: 'firebrick'}
         )
         fig_hist.data = sorted(fig_hist.data, key=lambda hist: hist.legendgroup)
@@ -58,8 +70,6 @@ def parallel_coordinates_and_hist(*args, **kwargs):
     fig.update_layout(barmode='stack', showlegend=False) # 'group', 'relative', 'overlay'
 
     def update_highlight(dimension, constraintrange):
-        from pathos.multiprocessing import Pool
-        import numpy as np
         masks = []
         for d in fig.data[0].dimensions:
             if d.constraintrange is not None:
@@ -77,8 +87,8 @@ def parallel_coordinates_and_hist(*args, **kwargs):
         # Pool doesn't work here probabily because fig are copied to each worker
         with fig.batch_update():
             for i, d in enumerate(fig.data[0].dimensions):
-                fig.data[i*2+1].y = df.loc[mask & (~df['label'].astype(bool)), d.label]
-                fig.data[i*2+2].y = df.loc[mask & (df['label'].astype(bool)), d.label]
+                for j, label in enumerate(labels_unique):
+                    fig.data[i*(len(labels_unique))+j+1].y = df.loc[mask & (labels == label), d.label]
 
     for d in fig.data[0].dimensions:
         d.on_change(update_highlight, 'constraintrange')

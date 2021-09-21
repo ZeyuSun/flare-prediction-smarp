@@ -1,3 +1,4 @@
+from ipdb import set_trace as breakpoint
 from typing import Union
 import pandas as pd
 from uncertainties import ufloat
@@ -189,6 +190,7 @@ def print_pvalues(runs, dataset_name):
     for estimator_name in ['LSTM', 'CNN']:
         print(estimator_name)
         for metric in ['ACC', 'AUC', 'TSS', 'HSS', 'BSS']:
+            # TODO: sort to make sure measurements are paired
             a = runs.loc[get_mask(runs, 'fused_'+dataset_name, estimator_name), metric].tolist()
             b = runs.loc[get_mask(runs, dataset_name, estimator_name), metric].tolist()
             print(metric, paired_ttest(a, b))
@@ -233,3 +235,15 @@ def download_figures(runs_raw, dataset_name, seed, estimator_name, output_dir=No
         dst = os.path.join(output_dir, f'{seed}_{estimator_name}_{dataset_name}_{figure}.png')
         # dst = 'temp/LSTM_fused_sharp_1_ssp.png'
         shutil.copy(src, dst)
+        
+        
+def unstack_reps(runs_raw, index_cols=None, rep_col=None, metric_cols=None):
+    #index_cols = index_cols or ['params.dataset0', 'params.estimator0', 'params.criterion']
+    #rep_col = rep_col or 'params.seed0'
+    #other_cols = ['metrics.tss_over_best']
+    df = (runs_raw
+          .loc[:, [*index_cols, rep_col, *metric_cols]]
+          .set_index(index_cols + [rep_col])
+          .unstack(-1)
+         )
+    return df
