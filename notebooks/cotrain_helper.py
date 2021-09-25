@@ -108,7 +108,7 @@ def get_split(dfs, split):
     return df_fig
 
 
-def get_learner_by_query(query):
+def get_learner_by_query(query, eval_mode=False, device=None):
     s = {
         'experiment': 'cv',
         'run': 'cv',
@@ -133,6 +133,10 @@ def get_learner_by_query(query):
         print('WARNING: more than 1 runs')
     ckpt_path = selected['tags.checkpoint'].iloc[0]
     learner = Learner.load_from_checkpoint(ckpt_path)
+    if eval_mode:
+        learner.eval()
+    if device:
+        learner.to(device)
     return learner
 
 
@@ -642,6 +646,7 @@ def retrieve_run(query):
         print('WARNING: more than 1 runs')
     run = selected.iloc[0]
     return run
+
 
 @lru_cache
 def retrieve_metrics(run_id, metric_key, steps=None):

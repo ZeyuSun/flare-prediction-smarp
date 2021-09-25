@@ -233,17 +233,19 @@ def get_heatmaps_from_df(df, algorithms,
     return heatmaps
 
 
-def get_heatmaps(Z_list, algorithms, device):
-    dataset_pos = [torch.tensor(np.expand_dims(Z, axis=(0,1))).to(learner.device).to(torch.float32)
-                   for Z in Z_list_pos]
+def get_heatmaps_synthetic(Z_list, algorithms, learner):
+    dataset = [(torch.tensor(np.expand_dims(Z, axis=(0,1)))
+                .to(learner.device)
+                .to(torch.float32))
+               for Z in Z_list]
 
     dataloader = DataLoader(
-        dataset_pos,
+        dataset,
         batch_size=4,
         #num_workers=0,
     )
 
-    heatmaps = {a: [None] * len(df_pos) for a in algorithms}
+    heatmaps = {}
     for algorithm in tqdm(algorithms):
         hs = []
         for videos in tqdm(dataloader):
@@ -267,10 +269,17 @@ def plot_heatmaps_info(imgs, algorithms, info,
                        animation_frame=None,
                        num_frames=16, num_frames_after=15):
     if animation_frame is not None:
-        # although there are two other keys ('prob', 'label') used for info, we should probabily define t_steps outside the function. Because defining it inside requires two other arguments (num_frames and num_frames_after) that are not used elsewhere.
-        # From the point view of atomic function, t_steps should be taken care of outside of the function. If you there are too many things outside, you need another level of abstraction.
+        # although there are two other keys ('prob', 'label') used for info,
+        # we should probabily define t_steps outside the function. Because
+        # defining it inside requires two other arguments (num_frames and
+        # num_frames_after) that are not used elsewhere.
+        # From the point view of atomic function, t_steps should be taken care
+        # of outside of the function. If you there are too many things outside,
+        # you need another level of abstraction.
         # We also want prob and label to change with animation.
-        t_steps = get_t_steps(info['t_end'], num_frames=num_frames, num_frames_after=num_frames_after)
+        t_steps = get_t_steps(info['t_end'],
+                              num_frames=num_frames,
+                              num_frames_after=num_frames_after)
         dims = ('Algorithm', 'Time', 'h', 'w')
         coords = {'Algorithm': algorithms, 'Time': t_steps}
     else:
@@ -431,7 +440,7 @@ def add_label(fig, label, label_color=None):
     )
     return fig
 
-    
+
 def add_pred(fig, prob, pred_color=None):
     fig.add_annotation(
         text=f'Prob {prob:.4f}',
