@@ -266,24 +266,15 @@ def get_t_steps(t_now: str, num_frames=16, num_frames_after=15):
     
 def plot_heatmaps_info(imgs, algorithms, info,
                        zmin, zmax, color_continuous_scale,
-                       animation_frame=None,
-                       num_frames=16, num_frames_after=15):
+                       animation_frame=None):
     if animation_frame is not None:
-        # although there are two other keys ('prob', 'label') used for info,
-        # we should probabily define t_steps outside the function. Because
-        # defining it inside requires two other arguments (num_frames and
-        # num_frames_after) that are not used elsewhere.
-        # From the point view of atomic function, t_steps should be taken care
-        # of outside of the function. If you there are too many things outside,
-        # you need another level of abstraction.
-        # We also want prob and label to change with animation.
-        t_steps = get_t_steps(info['t_end'],
-                              num_frames=num_frames,
-                              num_frames_after=num_frames_after)
-        dims = ('Algorithm', 'Time', 'h', 'w')
-        coords = {'Algorithm': algorithms, 'Time': t_steps}
+        # Use the timestamps in info
+        dims = ('Algorithm', 'Time', '\n', '')
+        # h,w can't be both ''. They are used to index
+        # specifying labels in px.imshow doesn't work
+        coords = {'Algorithm': algorithms, 'Time': info['t_end']}
     else:
-        dims = ('Algorithm', 'h', 'w')
+        dims = ('Algorithm', '\n', '')
         coords = {'Algorithm': algorithms}
     imgs = xr.DataArray(imgs, dims=dims, coords=coords)
     fig = plot_heatmaps(imgs, zmin, zmax, color_continuous_scale,
@@ -294,10 +285,33 @@ def plot_heatmaps_info(imgs, algorithms, info,
     # we can implement a heuristic here
     #val_split = info['model_query'].split('/')[-3]
     #prob = info['prob' + val_split]
-    prob = info['prob']
-    label = info['label']
-    fig = add_label(fig, label, label_color="Red" if label else "Green")
-    fig = add_pred(fig, prob, pred_color="Red" if prob > 0.5 else "Green")
+    #prob = info['prob'].iloc[0]
+    #label = info['label'].iloc[0]
+    #fig = add_label(fig, label, label_color="Red" if label else "Green")
+    #fig = add_pred(fig, prob, pred_color="Red" if prob > 0.5 else "Green")
+    
+    # I don't know how to add annotation and shape to each frame
+    # Each frame's layout.annotations is an emtpy tuple
+    # Tried:
+    # fig.layout.annotations[-2:]
+    # fig.frames[1].layout.annotations = (go.layout.Annotation({
+    #     'bgcolor': 'Blue', # change from Green
+    #     'font': {'color': 'White', 'size': 12},
+    #     'showarrow': False,
+    #     'text': 'Prob 0.0145',
+    #     'x': 1,
+    #     'xanchor': 'right',
+    #     'xref': 'x domain',
+    #     'y': 0,
+    #     'yanchor': 'bottom',
+    #     'yref': 'y domain'
+    # }),)
+    # shape is also one attribute of layout
+    
+    # Facet subtitle implemented as annotations. This doesn't work:
+    # for i in range(len(fig.frames)):
+    #     fig.frames[i].layout.update(title=info['prob'].iloc[i])
+    
     fig.update_layout(
         #dragmode='drawopenpath',
         newshape=dict(line_color='cyan'),
@@ -370,6 +384,7 @@ def plot_heatmaps(imgs, zmin, zmax, color_continuous_scale, animation_frame=None
         binary_string=False,
         color_continuous_scale=color_continuous_scale,
         aspect='equal', # None means 'equal' for ndarray but 'auto' for xarray
+        #labels={'h': '', 'w': ''}, # doesn't work
     )
 
     ## Solution 2: subplots
