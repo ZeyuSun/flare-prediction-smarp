@@ -73,3 +73,22 @@ def check(tensor):
     if not (nans.any() or infs.any()):
         print('Good tensor!')
 
+
+def _save(inputs, layer_evals, summed_grads):
+    """
+    Used in inspection of Captum LayerGradCAM
+    All inputs are tuples of len 1.
+    ```
+    ipdb>  layer_evals[0].shape
+    torch.Size([9, 64, 1, 8, 8])
+    ipdb>  inputs[0].shape
+    torch.Size([9, 1, 1, 128, 128])
+    ipdb>  summed_grads[0].shape
+    torch.Size([9, 64, 1, 1, 1])
+    ```
+    """
+    import numpy as np
+    tensors = [inputs[0], layer_evals[0], summed_grads[0]]
+    names = ['_inputs', '_layer_evals', '_summed_grads']
+    for t, n in zip(tensors, names):
+        np.save(n, t.detach().cpu().numpy())
