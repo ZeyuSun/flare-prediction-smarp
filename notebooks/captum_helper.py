@@ -65,7 +65,7 @@ def get_heatmap(algorithm, learner, input, target='negate', baselines='zero'):
         heatmap = layer_gradcam.attribute(
             input,
             target=target,
-            #relu_attributions=True,
+            relu_attributions=True,
         )
         # up to 5D input is supported: (B, C, [D], [H], W)
         # the `size` argument does not include B and C
@@ -338,16 +338,23 @@ def plot_heatmaps_contour(images, attribution_maps):
             mask = heatmap[t][0,0]
             mask_smoothed = gaussian_filter(mask, sigma=1)
 
-            fig, ax = plt.subplots(nrows=1, ncols=2, figsize=(10,5))
+            fig, ax = plt.subplots(nrows=1, ncols=2, figsize=(8,4))
             ax[0].imshow(images[0][0,0], vmin=-vmax, vmax=vmax, cmap='gray')
-            ax[0].contour(mask_smoothed, vmin=-vmax_level, vmax=vmax_level,
-                   levels=0.9 * np.array([-vmax_level, vmax_level]), # should be the most contrastive color so vmin and vmax
-                   cmap='RdBu_r')
+            ax[0].contour(mask_smoothed,
+                          vmin=-vmax_level, vmax=vmax_level,
+                          linewidths=2,
+                          levels=0.9 * np.array([-vmax_level, vmax_level]), # should be the most contrastive color so vmin and vmax
+                          cmap='bwr')
+            ax[0].axis('off')
 
             ax[1].imshow(images[t][0,0], vmin=-vmax, vmax=vmax, cmap='gray')
-            ax[1].contour(mask_smoothed, vmin=-vmax_level, vmax=vmax_level,
-                   levels=0.9 * np.array([-vmax_level, vmax_level]), # should be the most contrastive color so vmin and vmax
-                   cmap='RdBu_r')
+            ax[1].contour(mask_smoothed,
+                          vmin=-vmax_level,
+                          vmax=vmax_level,
+                          levels=0.9 * np.array([-vmax_level, vmax_level]), # should be the most contrastive color so vmin and vmax
+                          linewidths=2,
+                          cmap='bwr')
+            ax[1].axis('off')
             figs[algorithm].append(fig)
     return figs
 
