@@ -202,6 +202,7 @@ def select_per_arp(dataset, arpnum,
             't_start': t_start,
             't_end': t_end,
             'label': label,
+            'noaa_ars': noaa_ars, # list[int]. Untested. Add NOAA AR so that we can look for flares given the sample
             'flares': '|'.join(flares_future),
             'bad_img_idx': bad_img_idx,
             'HEIGHT': df_new['HEIGHT'].iloc[-1],
