@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 import matplotlib.pyplot as plt
+from matplotlib.colors import Normalize
 from tqdm.notebook import tqdm
 import torch
 from torch.utils.data import DataLoader
@@ -357,6 +358,122 @@ def plot_heatmaps_contour(images, attribution_maps):
             ax[1].axis('off')
             figs[algorithm].append(fig)
     return figs
+
+
+def plot_heatmaps_overlay(heatmaps):
+    images = heatmaps['Original']
+    attrs = heatmaps['GuidedBackprop']
+    outlier_perc = 0.2
+    
+    figs = []
+    vmax_image = np.percentile(np.absolute(images), 99)
+    vmax_attr = np.percentile(np.abs(np.ravel(attrs)), 100-outlier_perc)
+    for t in range(len(images)):
+        #if t != 8:
+        #    continue
+        image = images[t][0,0]
+        attr = attrs[t][0,0]
+
+        fig, _ = visualize_image_attr(
+            attr,
+            image,
+            method='blended_heatmap', #'masked_image', #'blended_heatmap',
+            sign='absolute', #'all', #'absolute',
+            thresh_image=vmax_image,
+            thresh_attr=vmax_attr,
+        )
+        figs.append(fig)
+    return figs
+
+        
+def visualize_image_attr(
+        attr,
+        image,
+        method='blended_heatmap',
+        sign='all',
+        thresh_image=None,
+        thresh_attr=None,
+        cmap_image=None,
+        cmap_attr=None,
+        alpha_overlay=0.4,
+        show_colorbar=True,
+    ):
+    """
+    Adapted from Captum. Not finished.
+    
+    Args:
+        attr (ndarray): Attribution map.
+        image (ndarray): Original image.
+        method (str): Options are
+            - 'blended_heatmap'
+            - 'alpha_scaling'. Incompatible with sign='all'.
+            - 'masked_image'. Incompatible with sign='all'.
+        sign (str): Options are
+            - 'all'. Incompatible with method='alpha_scaling' or 'masked_image'.
+            - 'absolute'
+            - 'positive'
+        cmap_attr (str): Defaults to 'bwr' for all sign, 'Blues' for absolute
+            sign, and 'Greens' for positive sign.
+    """
+    # begin of function
+    assert image.ndim <= 3 and attr.ndim <= 3
+    if image.ndim == 3:
+        image = np.mean(image, axis=2)
+    if attr.ndim == 3:
+        attr = np.mean(attr, axis=2)
+        
+    vmax_image = thresh_image
+    vmin_image = -thresh_image if vmax_image else None
+    
+    vmax_attr = thresh_attr
+    vmin_attr = -vmax_attr if sign == 'all' else 0
+    
+    cmap_image = cmap_image or 'gray' #'coolwarm'
+
+    if cmap_attr is None:
+        if sign == 'all':
+            cmap_attr = 'bwr'
+        elif sign == 'absolute':
+            cmap_attr = 'hot' #'Blues' # 'hot'
+        elif sign == 'positive':
+            cmap_attr = 'Greens'
+        else:
+            raise
+
+    if sign == 'absolute':
+        attr = np.abs(attr)
+    elif sign == 'positive':
+        attr = attr * (attr > 0)
+    norm_image = Normalize(vmin=vmin_image, vmax=vmax_image, clip=True)
+    norm_attr = Normalize(vmin=vmin_attr, vmax=vmax_attr, clip=True)
+
+    heatmap = None
+    fig, ax = plt.subplots(figsize=(6,6))
+    if method == 'blended_heatmap':
+        ax.imshow(image, norm=norm_image, cmap=cmap_image)
+        heatmap = ax.imshow(attr, alpha=alpha_overlay, norm=norm_attr, cmap=cmap_attr)
+    elif method == 'alpha_scaling':
+        assert sign != 'all'
+        _cmap = plt.get_cmap(cmap_image)
+        _image = _cmap(norm_image(image))
+        _image[..., -1] = norm_attr(attr)
+        ax.imshow(_image)
+    elif method == 'masked_image':
+        assert sign != 'all'
+        _attr = norm_attr(attr)
+        ax.imshow(image * attr, cmap=cmap_image)
+        
+    if show_colorbar:
+        from mpl_toolkits.axes_grid1 import make_axes_locatable
+        axis_separator = make_axes_locatable(ax)
+        ax_colorbar = axis_separator.append_axes("right", size="5%", pad=0.1)
+        if heatmap:
+            fig.colorbar(heatmap, orientation="vertical", cax=ax_colorbar)
+        else:
+            ax_colorbar.axis('off')
+    
+    ax.axis('off')
+    return fig, ax
 
 
 def plot_heatmaps(imgs, zmin, zmax, color_continuous_scale, animation_frame=None, facet_col=None):
