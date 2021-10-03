@@ -76,6 +76,19 @@ def get_heatmap(algorithm, learner, input, target='negate', baselines='zero'):
             mode='trilinear',
             align_corners=False,
         )
+    elif algorithm == 'ArnetGradCam':
+        from arnet.utils import GradCAM
+        target_layers = ['convs.conv5']
+        gradcam = GradCAM(
+            model,
+            target_layers,
+            data_mean=0,
+            data_std=1,
+        )
+        overlapped, image, heatmap, preds = gradcam(
+            input,
+            labels=target,
+        )
     elif algorithm == 'GuidedGradCam':  # (Selvaraju 2016)
         guided_gradcam = GuidedGradCam(model, model.convs.conv4) #conv5)
         heatmap = guided_gradcam.attribute(
@@ -203,7 +216,9 @@ def get_heatmaps_from_df(df, algorithms,
             hs = []
             for videos, sizes, labels, meta in dataloader:
                 if target_type == 'pos':
-                    target = 1
+                    target = torch.ones(labels.shape, dtype=int)
+                elif target_type == 'neg':
+                    target = torch.zeros(labels.shape, dtype=int)
                 elif target_type == 'negate':
                     target = 'negate'
                 elif target_type == 'label':
@@ -231,6 +246,27 @@ def get_heatmaps_from_df(df, algorithms,
 
             for i, m in zip(subdf.index, hmaps):
                 heatmaps[algorithm][i] = m
+    return heatmaps
+
+
+def resize_heatmaps(heatmaps, df):
+    for i in range(len(df)):
+        prefix = df['prefix'].iloc[i]
+        arpnum = df['arpnum'].iloc[i]
+        t_end = pd.to_datetime(df['t_end'].iloc[i])
+        data, header = load_data_and_header(prefix, arpnum, t_end)
+
+        for a in heatmaps:
+            assert heatmaps[a][i].shape[:2] == (1,1)
+            if a == 'Original':
+                heatmaps[a][i] = np.expand_dims(data, axis=(0,1))
+            else:
+                heatmap = resize(
+                    heatmaps[a][i][0, 0],
+                    data.shape,
+                    order=2
+                )
+                heatmaps[a][i] = np.expand_dims(heatmap, axis=(0,1))
     return heatmaps
 
 
@@ -267,7 +303,9 @@ def get_t_steps(t_now: str, num_frames=16, num_frames_after=15):
     
 def plot_heatmaps_info(imgs, algorithms, info,
                        zmin, zmax, color_continuous_scale,
-                       animation_frame=None):
+                       animation_frame=None,
+                       **kwargs
+                      ):
     if animation_frame is not None:
         # Use the timestamps in info
         dims = ('Algorithm', 'Time', '\n', '')
@@ -280,7 +318,9 @@ def plot_heatmaps_info(imgs, algorithms, info,
     imgs = xr.DataArray(imgs, dims=dims, coords=coords)
     fig = plot_heatmaps(imgs, zmin, zmax, color_continuous_scale,
                         animation_frame=animation_frame, # 1 or None
-                        facet_col=0)
+                        facet_col=0,
+                        **kwargs
+                       )
     
     # how prob or prob0,1... are defined in df_box needs to be consistent.
     # we can implement a heuristic here
@@ -325,7 +365,11 @@ def plot_heatmaps_info(imgs, algorithms, info,
     return fig
 
 
-def plot_heatmaps_contour(images, attribution_maps):
+def plot_heatmaps_contour(images, attribution_maps,
+                          sigma=1,
+                          linewidth=2,
+                          figsize=(8,4),
+                         ):
     """
     Plot images with attribution map contours
     """
@@ -337,13 +381,13 @@ def plot_heatmaps_contour(images, attribution_maps):
         figs[algorithm] = []
         for t in range(len(images)):
             mask = heatmap[t][0,0]
-            mask_smoothed = gaussian_filter(mask, sigma=1)
+            mask_smoothed = gaussian_filter(mask, sigma=sigma)
 
-            fig, ax = plt.subplots(nrows=1, ncols=2, figsize=(8,4))
+            fig, ax = plt.subplots(nrows=1, ncols=2, figsize=figsize)
             ax[0].imshow(images[0][0,0], vmin=-vmax, vmax=vmax, cmap='gray')
             ax[0].contour(mask_smoothed,
                           vmin=-vmax_level, vmax=vmax_level,
-                          linewidths=2,
+                          linewidths=linewidth,
                           levels=0.9 * np.array([-vmax_level, vmax_level]), # should be the most contrastive color so vmin and vmax
                           cmap='bwr')
             ax[0].axis('off')
@@ -353,7 +397,7 @@ def plot_heatmaps_contour(images, attribution_maps):
                           vmin=-vmax_level,
                           vmax=vmax_level,
                           levels=0.9 * np.array([-vmax_level, vmax_level]), # should be the most contrastive color so vmin and vmax
-                          linewidths=2,
+                          linewidths=linewidth,
                           cmap='bwr')
             ax[1].axis('off')
             figs[algorithm].append(fig)
@@ -476,7 +520,7 @@ def visualize_image_attr(
     return fig, ax
 
 
-def plot_heatmaps(imgs, zmin, zmax, color_continuous_scale, animation_frame=None, facet_col=None):
+def plot_heatmaps(imgs, zmin, zmax, color_continuous_scale, animation_frame=None, facet_col=None, **kwargs):
     """
     Args:
         imgs: np.ndarray of shape (N, H, W)
@@ -509,6 +553,7 @@ def plot_heatmaps(imgs, zmin, zmax, color_continuous_scale, animation_frame=None
         color_continuous_scale=color_continuous_scale,
         aspect='equal', # None means 'equal' for ndarray but 'auto' for xarray
         #labels={'h': '', 'w': ''}, # doesn't work
+        **kwargs
     )
 
     ## Solution 2: subplots
@@ -592,3 +637,55 @@ def add_pred(fig, prob, pred_color=None):
         row=0, col=1,
     )
     return fig
+
+
+def get_fits_data_filepath(prefix, arpnum, time):
+    import os
+    
+    if prefix == 'HARP':
+        series = 'hmi.sharp_cea_720s'
+        data_dir = '/data2/SHARP/image/'
+    elif prefix == 'TARP':
+        series = 'mdi.smarp_cea_96m'
+        data_dir = '/data2/SMARP/image/'
+    else:
+        raise
+
+    t = time.strftime('%Y%m%d_%H%M%S_TAI')
+    filename = f'{series}.{arpnum}.{t}.magnetogram.fits'
+    filepath = os.path.join(data_dir, f'{arpnum:06d}', filename)
+    return filepath
+
+
+def get_fits_header_filepath(prefix, arpnum):
+    import os
+    
+    if prefix == 'HARP':
+        database = 'SHARP'
+    elif prefix == 'TARP':
+        database = 'SMARP'
+    else:
+        raise
+
+    filepath = f'/data2/{database}/header/{prefix}{arpnum:06d}_ATTRS.csv'
+    return filepath
+
+
+def load_data_and_header(prefix, arpnum, time):
+    """
+    To show the data:
+    ```python
+    sunpy.map.Map(data, dict(header.iloc[0])).peek()
+    ```
+    """
+    from astropy.io import fits
+    
+    filepath = get_fits_data_filepath(prefix, arpnum, time)
+    data = fits.open(filepath)[1].data
+    
+    t_rec = time.strftime('%Y.%m.%d_%H:%M:%S_TAI')
+    filepath = get_fits_header_filepath(prefix, arpnum)
+    header = pd.read_csv(filepath)
+    header = header[header['T_REC'] == t_rec]
+
+    return data, header
