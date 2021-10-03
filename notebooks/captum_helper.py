@@ -11,6 +11,7 @@ from torch.utils.data import DataLoader
 from torchvision.transforms import Compose
 from skimage.transform import resize
 from scipy.ndimage import gaussian_filter
+import sunpy
 from captum.attr import IntegratedGradients, Saliency, DeepLift, GuidedBackprop, GuidedGradCam, Deconvolution, NoiseTunnel, LRP, LayerGradCam, LayerLRP
 
 from arnet.utils import get_layer
@@ -369,6 +370,8 @@ def plot_heatmaps_contour(images, attribution_maps,
                           sigma=1,
                           linewidth=2,
                           figsize=(8,4),
+                          headers=None,
+                          outlier_perc=2,
                          ):
     """
     Plot images with attribution map contours
@@ -376,30 +379,48 @@ def plot_heatmaps_contour(images, attribution_maps,
     figs = {}
     vmax = np.percentile(np.absolute(images), 99)
     for algorithm, heatmap in attribution_maps.items():
-        vmax_heatmap = np.percentile(np.absolute(heatmap), 99) # perceptive max: 0.0115
-        vmax_level = vmax_heatmap * 0.8
+        vmax_level = np.percentile(np.absolute(heatmap), 100-outlier_perc) # perceptive max: 0.0115
         figs[algorithm] = []
         for t in range(len(images)):
             mask = heatmap[t][0,0]
             mask_smoothed = gaussian_filter(mask, sigma=sigma)
 
-            fig, ax = plt.subplots(nrows=1, ncols=2, figsize=figsize)
-            ax[0].imshow(images[0][0,0], vmin=-vmax, vmax=vmax, cmap='gray')
-            ax[0].contour(mask_smoothed,
-                          vmin=-vmax_level, vmax=vmax_level,
-                          linewidths=linewidth,
-                          levels=0.9 * np.array([-vmax_level, vmax_level]), # should be the most contrastive color so vmin and vmax
-                          cmap='bwr')
-            ax[0].axis('off')
+            fig = plt.figure(figsize=figsize)
+            if headers is None:
+                ax = fig.add_subplot(121)
+                ax.imshow(images[0][0,0], vmin=-vmax, vmax=vmax, cmap='gray')
+            else:
+                magnetogram = sunpy.map.Map(images[0][0,0], dict(headers.iloc[0]))
+                ax = fig.add_subplot(121, projection=magnetogram)
+                magnetogram.plot(axes=ax, vmin=-vmax, vmax=vmax)
+                magnetogram.draw_grid()
+            # Can't draw contours anymore if I plot sunpy map on this axes.
+            # Was hoping adding a new axis other than WCSAxes would fix the bug
+            # ax = fig.add_subplot(121)
+            ax.contour(mask_smoothed,
+                       vmin=-vmax_level, vmax=vmax_level,
+                       linewidths=linewidth,
+                       levels=np.array([-vmax_level, vmax_level]),
+                       cmap='bwr')
+            ax.axis('off') # Error if I use sunpy Map and don't turn off axis
 
-            ax[1].imshow(images[t][0,0], vmin=-vmax, vmax=vmax, cmap='gray')
-            ax[1].contour(mask_smoothed,
-                          vmin=-vmax_level,
-                          vmax=vmax_level,
-                          levels=0.9 * np.array([-vmax_level, vmax_level]), # should be the most contrastive color so vmin and vmax
-                          linewidths=linewidth,
-                          cmap='bwr')
-            ax[1].axis('off')
+            if headers is None:
+                ax = fig.add_subplot(122)
+                ax.imshow(images[t][0,0], vmin=-vmax, vmax=vmax, cmap='gray')
+            else:
+                magnetogram = sunpy.map.Map(images[t][0,0], dict(headers.iloc[t]))
+                ax = fig.add_subplot(122, projection=magnetogram)
+                magnetogram.plot(axes=ax, vmin=-vmax, vmax=vmax)
+                magnetogram.draw_grid()
+            #ax = fig.add_subplot(122)
+            ax.contour(mask_smoothed,
+                       vmin=-vmax_level,
+                       vmax=vmax_level,
+                       levels=np.array([-vmax_level, vmax_level]),
+                       linewidths=linewidth,
+                       cmap='bwr')
+            ax.axis('off')
+            fig.tight_layout()
             figs[algorithm].append(fig)
     return figs
 
@@ -671,7 +692,7 @@ def get_fits_header_filepath(prefix, arpnum):
     return filepath
 
 
-def load_data_and_header(prefix, arpnum, time):
+def load_data_and_header(prefix, arpnum, time, only_header=False):
     """
     To show the data:
     ```python
@@ -680,12 +701,16 @@ def load_data_and_header(prefix, arpnum, time):
     """
     from astropy.io import fits
     
-    filepath = get_fits_data_filepath(prefix, arpnum, time)
-    data = fits.open(filepath)[1].data
+    if not only_header:
+        filepath = get_fits_data_filepath(prefix, arpnum, time)
+        data = fits.open(filepath)[1].data
     
     t_rec = time.strftime('%Y.%m.%d_%H:%M:%S_TAI')
     filepath = get_fits_header_filepath(prefix, arpnum)
     header = pd.read_csv(filepath)
     header = header[header['T_REC'] == t_rec]
 
-    return data, header
+    if only_header:
+        return header
+    else:
+        return data, header
