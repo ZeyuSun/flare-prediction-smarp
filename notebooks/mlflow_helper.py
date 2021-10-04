@@ -97,7 +97,7 @@ def organize(runs, by=None, std=False):
     if std:
         df = (runs
             .groupby(by)
-            .agg(lambda s: ufloat(s.mean(), s.std())) #['mean', 'std'])
+            .agg(lambda s: ufloat(s.mean(), s.std())) #['mean', 'std']) #FutureWarning: Dropping invalid columns in DataFrameGroupBy.agg is deprecated. In a future version, a TypeError will be raised. Before calling .agg, select only columns which should be valid for the aggregating function.
             .unstack(-1).T
             #.sort_values('database', axis=1, key=extract_hours)
             #.round(4)
@@ -106,7 +106,7 @@ def organize(runs, by=None, std=False):
     else:
         df = (runs
             .groupby(by)
-            .agg('mean')
+            .agg('mean') #FutureWarning: Dropping invalid columns in DataFrameGroupBy.agg is deprecated. In a future version, a TypeError will be raised. Before calling .agg, select only columns which should be valid for the aggregating function.
             .unstack(-1).T
             #.sort_values('database', axis=1, key=extract_hours)
             .round(4)
@@ -125,7 +125,7 @@ def style(runs, by=None):
     return df_style
 
 
-def typeset(df):
+def typeset(df, **kwargs):
     """
     Usage:
     ```python
@@ -133,7 +133,13 @@ def typeset(df):
     print(typeset(df))
     ```
     """
-    df_latex = df.to_latex(multicolumn_format='c')
+    df_latex = df.to_latex(
+        #column_format='c' * df.shape[1], # index isn't counted as columns
+        multicolumn_format='c',
+        multirow=True,
+        #escape=False,
+        **kwargs,
+    )
     return df_latex
 
 
