@@ -81,21 +81,44 @@ def get_datasets(database, dataset, auxdata,
     df_smarp = load_csv_dataset(Path(database) / 'smarp.csv')
     df_sharp = load_csv_dataset(Path(database) / 'sharp.csv')
     fuse_dict = load_fusion_dataset(Path(auxdata))
+    # Two keys are outdated. fuse_dict =
+    #{'MEANGBZ': {'coef': 1.9920261748674042, 'intercept': 8.342889969768606},
+    #  'USFLUX': {'coef': 1.216160520290385, 'intercept': -3.8777994451166115e+20},
+    #  'R_VALUE': {'coef': 0.8327836641793915, 'intercept': -0.0945601961295528}}
     df_sharp = fuse_sharp_to_smarp(df_sharp, fuse_dict)
 
     # Cross validation split. No randomness.
-    if dataset in ['sharp', 'fused_sharp']:
-        df_train, df_test = group_split_data_cv(df_sharp, cv=5, split=test_split)
-        if validation:
-            df_train, df_val = group_split_data_cv(df_train, cv=5, split=val_split)
-        if dataset == 'fused_sharp':
-            df_train = pd.concat((df_train, df_smarp)).reset_index(drop=True)
-    elif dataset in ['smarp', 'fused_smarp']:
-        df_train, df_test = group_split_data_cv(df_smarp, cv=5, split=test_split)
-        if validation:
-            df_train, df_val = group_split_data_cv(df_train, cv=5, split=val_split)
-        if dataset == 'fused_smarp':
-            df_train = pd.concat((df_train, df_sharp)).reset_index(drop=True)
+    if val_split is None and test_split is None:
+        # This is how I split before cv was implemented
+        if dataset in ['sharp', 'fused_sharp']:
+            df_train, df_test = group_split_data(df_sharp, seed=seed)
+            if validation:
+                df_train, df_val = group_split_data(df_train, seed=seed)
+            if dataset == 'fused_sharp':
+                df_train = pd.concat((df_train, df_smarp)).reset_index(drop=True)
+        elif dataset in ['smarp', 'fused_smarp']:
+            df_train, df_test = group_split_data(df_smarp, seed=seed)
+            if validation:
+                df_train, df_val = group_split_data(df_train, seed=seed)
+            if dataset == 'fused_smarp':
+                df_train = pd.concat((df_train, df_sharp)).reset_index(drop=True)
+    else:
+        # If either of them is not None, then this is after cv was implemented
+        # We initialize None with 0
+        val_split = val_split or 0
+        test_split = test_split or 0
+        if dataset in ['sharp', 'fused_sharp']:
+            df_train, df_test = group_split_data_cv(df_sharp, cv=5, split=test_split)
+            if validation:
+                df_train, df_val = group_split_data_cv(df_train, cv=5, split=val_split)
+            if dataset == 'fused_sharp':
+                df_train = pd.concat((df_train, df_smarp)).reset_index(drop=True)
+        elif dataset in ['smarp', 'fused_smarp']:
+            df_train, df_test = group_split_data_cv(df_smarp, cv=5, split=test_split)
+            if validation:
+                df_train, df_val = group_split_data_cv(df_train, cv=5, split=val_split)
+            if dataset == 'fused_smarp':
+                df_train = pd.concat((df_train, df_sharp)).reset_index(drop=True)
 
     if sizes: # Why rus after split? Strict ratio; Option to rus only train
         df_train = rus(df_train, sizes=sizes, seed=seed)

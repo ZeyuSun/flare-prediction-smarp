@@ -17,6 +17,7 @@ def get_log_intensity(class_str):
     b = np.log10(float(class_str[1:]))
     return a + b
 
+
 def get_flare_class(log_intensity, class_only=False):
     class_map = {
         -8: 'A',
@@ -38,6 +39,7 @@ def get_flare_class(log_intensity, class_only=False):
     level = 10 ** (log_intensity - floor)
     level = f'{level:.1f}'
     return letter + level
+
 
 def plot_flare_history(flares, indices, session_time, harp_start):
     from datetime import timedelta
@@ -66,6 +68,7 @@ def plot_flare_history(flares, indices, session_time, harp_start):
                    flares.loc[i, 'start_time'])
     plt.show()
 
+
 def fig2rgb(fig):
     fig.canvas.draw()
     w, h = fig.canvas.get_width_height()
@@ -74,6 +77,7 @@ def fig2rgb(fig):
     plt.close()  # close the window to save memory
 
     return image
+
 
 def draw_conv2d_weight(weight, vmin=None, vmax=None):
     import matplotlib as mpl
@@ -127,6 +131,7 @@ def draw_conv2d_weight(weight, vmin=None, vmax=None):
     plt.close()
     return fig
 
+
 def draw_confusion_matrix(matrix, labels=None):
     from itertools import product
 
@@ -162,6 +167,7 @@ def draw_confusion_matrix(matrix, labels=None):
     plt.tight_layout()
     return fig
 
+
 def _column_or_1d(y):
     y = np.asarray(y)
     shape = np.shape(y)
@@ -171,8 +177,12 @@ def _column_or_1d(y):
         'y should be 1d array, '
         'got an array of shape {} instead.'.format(shape))
 
+
 def calibration_curve(y_true, y_prob, *, n_bins=5, prob_pred_value='center'):
     """A modified version of sklearn.calibration.calibration_curve
+    - Return bin_total
+    - Add argument prob_pred_value
+    - Return exactly n_bins, with potentially np.nan
 
     Args:
         y_true: Array-like of shape (n_samples,)
@@ -204,23 +214,25 @@ def calibration_curve(y_true, y_prob, *, n_bins=5, prob_pred_value='center'):
     bins = np.linspace(0., 1. + 1e-8, n_bins + 1)
     binids = np.digitize(y_prob, bins) - 1
     bin_total = np.bincount(binids, minlength=n_bins)
-    nonzero = bin_total != 0
 
     bin_true = np.bincount(binids, weights=y_true, minlength=n_bins)
-    prob_true = bin_true[nonzero] / bin_total[nonzero]
+    # np.array([0, 1]) / 0 = array([nan, inf])
+    prob_true = np.array([m / n if n != 0 else np.nan
+                          for m, n in zip(bin_true, bin_total)])
 
     if prob_pred_value == 'center':
         half_bin = 0.5 / n_bins
-        prob_pred = np.arange(half_bin, 1, half_bin*2)[nonzero]
+        prob_pred = np.arange(half_bin, 1, half_bin*2)
     elif prob_pred_value == 'mean':
+        raise ValueError('Nobody use this...')
         bin_sums = np.bincount(binids, weights=y_prob, minlength=n_bins)
-        prob_pred = bin_sums[nonzero] / bin_total[nonzero]
+        prob_pred = np.array([m / n if n != 0 else np.nan
+                              for m, n in zip(bin_sums, bin_total)])
     else:
         raise ValueError('prob_pred_value should be either "center" or "mean".')
 
-    bin_total = bin_total[nonzero]
-
     return prob_true, prob_pred, bin_total
+
 
 def squarify(fig):
     w, h = fig.get_size_inches()
@@ -237,77 +249,296 @@ def squarify(fig):
         l = (1.-axs/h)/2
         fig.subplots_adjust(bottom=l, top=1-l)
 
-def draw_reliability_plot(y_true, y_prob, n_bins=5):
+
+def check_and_convert(y_true, y_prob):
     import torch
-    if not isinstance(y_true, torch.Tensor):
-        y_true = torch.tensor(y_true)
-    if not isinstance(y_prob, torch.Tensor):
-        y_prob = torch.tensor(y_prob)
+    # Convert type to numpy array or list
+    if isinstance(y_true, torch.Tensor):
+        y_true = y_true.detach().cpu().numpy()
+    elif hasattr(y_true, 'values'): # pd.Series, pd.DataFrame, ...
+        y_true = y_true.values
 
-    clim = y_true.double().mean() # np.mean's argument can't be torch.Tensor
-    prob_true, prob_pred, bin_total = calibration_curve(y_true, y_prob,
-                                                        n_bins=n_bins)
-    sigma = np.sqrt(prob_true * (1-prob_true)/(bin_total + 3))
-    #sigma = np.sqrt(prob_true * ((1-prob_true)/bin_total))
-    fig, ax1 = plt.subplots(figsize=(3.75,3))
-    ax1.plot(prob_pred, prob_true)
-    ax1.errorbar(prob_pred, prob_true, yerr=sigma,
-                 marker='o', color='C0', linestyle='')
-    ax1.plot([0,1], [0,1], ':', color='C7')
-    ax1.plot([0,1], [clim, clim], ':', color='C7')
-    ax1.plot([0,1], [clim/2, (1+clim)/2], ':', color='C7')
-    ax1.set_xlim([0,1])
-    ax1.set_ylim([0,1])
-    ax1.set_xticks(np.linspace(0,1,11), minor=True)
-    ax1.set_yticks(np.linspace(0,1,11), minor=True)
-    #ax1.set_aspect('equal')
-    ax1.set_xlabel('Predicted Probability')
-    ax1.set_ylabel('Observed Frequency', color='C0')
+    if isinstance(y_prob, torch.Tensor):
+        y_prob = y_prob.detach().cpu().numpy()
+    elif hasattr(y_prob, 'values'):
+        y_prob = y_prob.values
 
-    ax2 = ax1.twinx()
+    # Nasty
+    #if isinstance(y_true[0], (int, np.int64, float, bool, np.bool_)):
+    #    y_true = [y_true]
+    #if isinstance(y_prob[0], (int, float, bool, np.bool_)):
+    #    y_prob = [y_prob]
+    try:
+        y_true[0][0]
+    except IndexError:
+        y_true = [y_true]
+    try:
+        y_prob[0][0]
+    except IndexError:
+        y_prob = [y_prob]
+
+    # Broadcast
+    if len(y_true) == 1 and len(y_prob) > 1:
+        y_true = y_true * len(y_prob)
+    if len(y_true) > 1 and len(y_prob) == 1:
+        y_prob = y_prob * len(y_true)
+    assert len(y_true) == len(y_prob)
+    assert all([len(a) == len(b) for a, b in zip(y_true, y_prob)])
+
+    return y_true, y_prob
+
+
+def draw_reliability_plot(
+        y_true,
+        y_prob,
+        n_bins=10,
+        offset=0,
+        fig_ax_ax2=None,
+        marker='o',
+        color='C0',
+        name=None,
+    ):
+    """
+    """
+    y_true, y_prob = check_and_convert(y_true, y_prob)
+
+    draw_error = len(y_true) > 1
+
+    # Compute reliability diagram
+    clim = np.mean([np.mean(y_t) for y_t in y_true])
+    prob_true = [None] * len(y_true)
+    for i, (y_t, y_p) in enumerate(zip(y_true, y_prob)):
+        prob_true[i], prob_pred, bin_total = calibration_curve(
+            y_t, y_p, n_bins=n_bins)
+    prob_true_mean = np.nanmean(prob_true, axis=0)
+    if draw_error:
+        prob_true_std = np.nanstd(prob_true, axis=0)
+    else:
+        # Uncertainty of prob with a uniform prior (Wheatland 2004)
+        # Since len(y_true) is 1, bin_total is the hist of all data
+        prob_true_std = np.sqrt(prob_true_mean * (1-prob_true_mean)/(bin_total + 3))
+
+    if fig_ax_ax2 is not None:
+        fig, ax, ax2 = fig_ax_ax2
+    else:
+        fig, ax = plt.subplots(figsize=(5, 4.5))
+        ax2 = ax.twinx()
+    ax.plot([0,1], [0,1], ':', color='C7')
+    ax.plot([0,1], [clim, clim], ':', color='C7')
+    ax.plot([0,1], [clim/2, (1+clim)/2], ':', color='C7')
+
+    # Reliability diagram
+    line, = ax.plot(
+       prob_pred,
+       prob_true_mean,
+    ) # connect the errorbars
+    line, _, _ = ax.errorbar(
+        prob_pred + offset,
+        prob_true_mean,
+        yerr=prob_true_std,
+        marker=marker,
+        linestyle='',
+        color=line.get_color(),
+        label=name,
+    )
+    ax.set_xlim([0,1])
+    ax.set_ylim([0,1])
+    ax.set_xticks(np.linspace(0,1,11), minor=True)
+    ax.set_yticks(np.linspace(0,1,11), minor=True)
+    #ax.set_aspect('equal')
+    ax.set_xlabel('Predicted Probability')
+    ax.set_ylabel('Observed Frequency')
+
+    # Histogram
     ax2.set_xlim([0,1])
+    #ax2.set_ylim(0, None) # Passing top=None but it is still [0, 1]
+    #ax2.set_yscale('log')
     #ax2.set_aspect('auto')  # equal aspect ratio won't work for twinx.
     # "aspect" in matplotlib always refers to the data, not the axes box.
-    ax2.plot(prob_pred, bin_total, 's--', color='C1')  # red, square
-    ax2.set_ylabel('Number of samples', color='C1')
+    ax2.plot(prob_pred + offset, bin_total, '_', mew=3, ms=12) # ax2 has its own color cycle
+    # plt.rcParams['lines.markersize'], plt.rcParams['lines.markeredgewidth'] = (6, 1)
+    ax2.set_ylabel('Number of samples')
 
     plt.tight_layout() # the figsize (canvas size) remains square, and the axis gets squeezed and become thinner because of the two ylabels
     squarify(fig)
     return fig
 
-def draw_roc(y_true, y_prob):
+
+def draw_roc(
+        y_true,
+        y_prob,
+        fpr_grid=None,
+        fig_ax=None,
+        name=None,
+    ):
+    """
+    TODO: y_true could have different elements in each row.
+    """
     from sklearn.metrics import roc_curve, auc
 
-    fpr, tpr, thresholds = roc_curve(y_true, y_prob)
-    fig, ax = plt.subplots(figsize=(3.75,3))
-    ax.plot(fpr, tpr, label='AUC = {:.3f}'.format(auc(fpr, tpr)))
-    ax.plot([0,1], [0,1], ls=':')
-    ax.set(xlim=[0,1], ylim=[0,1.03],
-           xlabel='False Positive Rate',
-           ylabel='True Positive Rate')
+    y_true, y_prob = check_and_convert(y_true, y_prob)
+
+    draw_error = len(y_true) > 1
+
+    # Calculate ROC and AUC
+    fpr_grid = fpr_grid or np.linspace(0, 1, 501)
+    tpr_grid = [None] * len(y_true)
+    aucs = [None] * len(y_true)
+    for i, (y_t, y_p) in enumerate(zip(y_true, y_prob)):
+        fpr, tpr, thresholds = roc_curve(y_t, y_p)
+        tpr_grid[i] = np.interp(fpr_grid, fpr, tpr)
+        aucs[i] = auc(fpr, tpr)
+    tpr_mean = np.mean(tpr_grid, axis=0)
+    tpr_std = np.std(tpr_grid, axis=0)
+    auc_mean = auc(fpr_grid, tpr_mean)
+    auc_std = np.std(aucs)
+
+    if fig_ax is not None:
+        fig, ax = fig_ax
+    else:
+        fig, ax = plt.subplots(figsize=(5, 4.5))
+
+    # No-skill line
+    ax.plot([0, 1], [0, 1], ls=':', color='C7')
+
+    # ROC
+    if draw_error:
+        label = r'AUC = %0.3f $\pm$ %0.3f' % (auc_mean, auc_std)
+    else:
+        label = r'AUC = %0.3f' % auc_mean
+    if name is not None:
+        label = name + ' (' + label + ')'
+    line, = ax.plot(
+        fpr_grid,
+        tpr_mean,
+        label=label,
+        #color= automatic
+    )
+
+    # Error (optional)
+    if draw_error:
+        ax.fill_between(
+            fpr_grid,
+            np.maximum(tpr_mean - tpr_std, 0),
+            np.minimum(tpr_mean + tpr_std, 1),
+            color=line.get_color(),
+            alpha=0.2,
+        )
+
+    # Layout
+    ax.set(xlim=[0, 1],
+           ylim=[0, 1],
+           xlabel='FAR', # 'False Positive Rate'
+           ylabel='POD') # 'True Positive Rate'
     ax.set_xticks(np.linspace(0,1,11), minor=True)
     ax.set_yticks(np.linspace(0,1,11), minor=True)
     ax.set_aspect('equal')
     ax.legend(loc='lower right')
 
     plt.tight_layout()  # avoid xlabels being cut off, or use bbox_inches='tight' in savefig
+
+    # Ideally, return (fig, ax)
+    # for backward compatibility, we do not return ax.
+    # use fig.axes[-1] to get the last axes
     return fig
 
-def draw_ssp(y_true, y_prob):
-    from sklearn.metrics import roc_curve
-    fpr, tpr, thresholds = roc_curve(y_true, y_prob)
-    fpr, tpr, thresholds = fpr[1:], tpr[1:], thresholds[1:] # remove added point
-    P = y_true.sum() #np.sum(y_true) don't use np.sum. Won't take sum() received an invalid combination of arguments - got (out=NoneType, axis=NoneType, ), but expected one of:
-    N = len(y_true) - P
-    FP, TP = N * fpr, P * tpr
-    TN, FN = N - FP, P - TP
-    TSS = tpr - fpr
-    HSS2 = 2 * (TP * TN - FN * FP) / (P * (FN+TN) + (TP+FP) * N)
 
+def draw_tpr_fpr(y_true, y_prob):
+    from sklearn.metrics import roc_curve, auc
+
+    fpr, tpr, thresholds = roc_curve(y_true, y_prob)
+    thresholds[0] = thresholds[0] - 1 + 0.001
     fig, ax = plt.subplots(figsize=(3.75,3))
-    ax.plot(thresholds, TSS, label='TSS')
-    ax.plot(thresholds, HSS2, label='HSS2')
+    ax.plot(thresholds, tpr, label='POD')
+    ax.plot(thresholds, fpr, label='FAR')
+    ax.set(xlabel='Threshold',
+           ylabel='Metric')
+    ax.set_xticks(np.linspace(0,1,11), minor=True)
     ax.legend()
+    ax.grid()
+    plt.tight_layout()
+    return fig
+
+
+def draw_ssp(
+        y_true,
+        y_prob,
+        thresholds=None,
+        scores=None,
+        fig_ax=None,
+        name=None,
+    ):
+    scores = scores or ['tss', 'hss']
+    from sklearn.metrics import roc_curve
+
+    y_true, y_prob = check_and_convert(y_true, y_prob)
+
+    draw_error = len(y_true) > 1
+
+    tss = [None] * len(y_true)
+    hss = [None] * len(y_true)
+    thresholds = thresholds or np.linspace(0, 1, 501)
+    for i, (y_t, y_p) in enumerate(zip(y_true, y_prob)):
+        _fpr, _tpr, _thresh = roc_curve(y_t, y_p)
+        _fpr, _tpr, _thresh = _fpr[1:][::-1], _tpr[1:][::-1], _thresh[1:][::-1]
+        # remove added point. revert _thresh so that it is increasing
+        fpr = np.interp(thresholds, _thresh, _fpr)
+        tpr = np.interp(thresholds, _thresh, _tpr)
+
+        tss[i] = tpr - fpr
+
+        P = y_t.sum() #np.sum(y_true) don't use np.sum. Won't take sum() received an invalid combination of arguments - got (out=NoneType, axis=NoneType, ), but expected one of:
+        N = len(y_t) - P
+        FP, TP = N * fpr, P * tpr
+        TN, FN = N - FP, P - TP
+        hss[i] = 2 * (TP * TN - FN * FP) / (P * (FN+TN) + (TP+FP) * N)
+    tss_mean = np.mean(tss, axis=0)
+    tss_std = np.std(tss, axis=0)
+    hss_mean = np.mean(hss, axis=0)
+    hss_std = np.std(hss, axis=0)
+
+    
+    if fig_ax is not None:
+        fig, ax = fig_ax
+    else:
+        fig, ax = plt.subplots(figsize=(5, 4.5))
+    suffix = '' if name is None else f' ({name})'
+    if name is None:
+        tss_label = 'TSS'
+        hss_label = 'HSS'
+    else:
+        tss_label = f'{name} (TSS)'
+        hss_label = f'{name} (HSS)'
+    if 'tss' in scores:
+        line_tss, = ax.plot(thresholds, tss_mean, label=tss_label)
+    if 'hss' in scores:
+        line_hss, = ax.plot(thresholds, hss_mean, label=hss_label)
+    if draw_error:
+        if 'tss' in scores:
+            ax.fill_between(
+                thresholds,
+                np.maximum(tss_mean - tss_std, 0),
+                np.minimum(tss_mean + tss_std, 1),
+                color=line_tss.get_color(),
+                alpha=0.2,
+            )
+        if 'hss' in scores:
+            ax.fill_between(
+                thresholds,
+                np.maximum(hss_mean - hss_std, 0),
+                np.minimum(hss_mean + hss_std, 1),
+                color=line_hss.get_color(),
+                alpha=0.2,
+            )
+    ax.legend(loc='lower center')
+    ax.set_xlabel('Threshold')
+    ax.set_ylabel('Score')
+    #ax.set_ylim(-0.05, 1.05)
+    #ax.set_xlim(-0.05, 1.05)
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+    ax.set_aspect('equal') # make sure the plane looks like ROC
+    plt.tight_layout()
     return fig
 
 
@@ -352,6 +583,7 @@ def plot_prediction_curve(noaa_ar: int,
     filename = filename or 'temp.png'
     plt.savefig(filename)
     #plt.show()
+
 
 if __name__ == '__main__':
     # # Test draw_reliability_plot

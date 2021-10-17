@@ -178,8 +178,8 @@ class ActiveRegionDataModule(pl.LightningDataModule):
             sizes='balanced' if self.cfg.DATA.BALANCED else None,
             validation=True,
             seed=self.cfg.DATA.SEED,
-            val_split=self.cfg.DATA.VAL_SPLIT,
-            test_split=self.cfg.DATA.TEST_SPLIT,
+            val_split=getattr(self.cfg.DATA, 'VAL_SPLIT', None),
+            test_split=getattr(self.cfg.DATA, 'TEST_SPLIT', None),
         )
         df_vals = [df_val, df_test]
 

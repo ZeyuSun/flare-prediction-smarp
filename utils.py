@@ -47,22 +47,40 @@ def get_output(model, X):
 
 
 def draw_pairplot(Xs, labels, keys):
+    """
+    Returns:
+        pair_grid (PairGrid): has attribution `figure` and `layout`
+    """
     import numpy as np
     import pandas as pd
+    import matplotlib
     import matplotlib.pyplot as plt
     import seaborn as sns
 
-    Xs = [X[np.random.choice(len(X), size=1000, replace=False)] if len(X) > 1000 else X
+    # If drawing density, should use stratefied sampling
+    # Why so complicated?
+    N = 2000
+    Xs = [X[np.random.choice(len(X), size=N, replace=False)] if len(X) > N else X
           for X in Xs]
 
     df = pd.DataFrame(np.concatenate(Xs), columns=keys)
     labels = np.concatenate([[label] * len(X) for X, label in zip(Xs, labels)])
     df = df.assign(label=labels)
-    sns.pairplot(df, hue='label', corner=True,
+
+    #plt.figure(figsize=(3,3))
+    # Changing figure size also proportionally changes the font size
+    plt.rcParams["font.size"] = 14 # It works! But the ticks are too coarse
+
+    #sns.set(font_scale=1.2)
+    #matplotlib.rc_file_defaults() # sns.set changes the style
+    #sns.set_style("ticks") # another style
+
+    pair_grid = sns.pairplot(df, hue='label', corner=True,
                  kind='kde', # both diag and off-diag
                  #diag_kind = 'kde',
                  diag_kws = {'common_norm': False}, # kdeplot(univariate)
                  plot_kws = {'common_norm': False, 'levels': 5}, # kdeplot(bivariate)
     )
     #plt.savefig('outputs/pairplot.png')
-    plt.show()
+    #plt.show()
+    return pair_grid

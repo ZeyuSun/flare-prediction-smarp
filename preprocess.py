@@ -63,30 +63,37 @@ def get_label(flares_observed, flares_future, criterion='M_Q'):
 
     Returns:
         label: True, False, or None
+        evolution: Two letter string of evolution
     """
+    # Prefer to return 2-letter type than binary label.
     THRESHOLDS = ['C', 'M', 'X']
     thresh, neg = criterion.split('_')
     assert thresh in THRESHOLDS
-    if any([f[0] >= thresh for f in flares_future]):
-        label = True
-    else:
-        if neg == 'Q':
-            if len(''.join(flares_observed + flares_future)) == 0:
-                label = False
-            else:
-                label = None
-        elif neg == 'QS':
-            flares = '|'.join(flares_observed)
-            if any([T in flares for T in THRESHOLDS if T >= thresh]):
-                label = None
-            else:
-                label = False
-        elif neg == 'QSL':
-            label = False
-        else:
-            raise
+    large_class = [T for T in THRESHOLDS if T >= thresh]
+    evolution_neg = {
+        'Q': ['QQ'],
+        'QS': ['QQ', 'QS', 'SQ', 'SS'],
+        'QSL': ['QQ', 'QS', 'SQ', 'SS', 'LQ', 'LS'],
+    }[neg]
 
-    return label
+    activities = [None, None]
+    for i, flares in enumerate([flares_observed, flares_future]):
+        if len(flares) == 0:
+            activities[i] = 'Q'
+        elif any([T in ''.join(flares) for T in large_class]):
+            activities[i] = 'L'
+        else:
+            activities[i] = 'S'
+
+    evolution = ''.join(activities)
+    if evolution in ['QL', 'SL', 'LL']:
+        label = True
+    elif evolution in evolution_neg:
+        label = False
+    else:
+        label = None
+
+    return label, evolution
 
 
 #@profile
@@ -191,7 +198,7 @@ def select_per_arp(dataset, arpnum,
         flare_index = get_flare_index(flares_observed)
 
         # (3) Drop the negative sample with large observed flares
-        label = get_label(flares_observed, flares_future, criterion)
+        label, evolution = get_label(flares_observed, flares_future, criterion)
         if label is None:
             counter['obs_pos'] += 1
             continue
@@ -202,6 +209,7 @@ def select_per_arp(dataset, arpnum,
             't_start': t_start,
             't_end': t_end,
             'label': label,
+            'evolution': evolution,
             'noaa_ars': noaa_ars, # list[int]. Untested. Add NOAA AR so that we can look for flares given the sample
             'flares': '|'.join(flares_future),
             'bad_img_idx': bad_img_idx,
@@ -293,7 +301,7 @@ if __name__ == '__main__':
     # raise
 
     # begin preprocessing
-    for criterion in ['M_Q', 'M_QS']:
+    for criterion in ['M_Q', 'M_QS', 'M_QSL']:
         for val_hours in [24]:
             output_dir = f'{criterion}_{val_hours}hr'
             logger.info(output_dir)

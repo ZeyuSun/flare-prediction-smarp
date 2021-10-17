@@ -140,7 +140,7 @@ def get_learner_by_query(query, eval_mode=False, device=None):
     return learner
 
 
-def get_val_csv(run, get_train: bool):
+def get_val_csv(run, get_train: bool, rus=True, discard=True):
     artifact_uri = run['artifact_uri']
     ckpt_path = run['tags.checkpoint']
     ckpt_info = (ckpt_path
@@ -156,37 +156,47 @@ def get_val_csv(run, get_train: bool):
     # ,prefix,arpnum,...
     # 0,HARP,338,...
     # 1,HARP,366,...
-    df_val = pd.read_csv(Path(artifact_uri) / 'validation0' / 'val_predictions.csv', index_col=0)
-    df_val = df_val.rename(columns={f'step-{step}': 'prob'})
-    df_val = df_val[[col for col in df_val.columns if 'step-' not in col]]
-
-    # df_test
-    df_test = pd.read_csv(Path(artifact_uri) / 'validation1' / 'val_predictions.csv', index_col=0)
-    df_test = df_test.rename(columns={f'step-{step}': 'prob'})
-    df_test = df_test[[col for col in df_test.columns if 'step-' not in col]]
-
-    if get_train:
+    if get_train or rus == False:
         learner = Learner.load_from_checkpoint(ckpt_path)
         kwargs = learner.cfg.TRAINER.todict()
         # Saved under notebooks/mlruns and notebooks/lightning_logs
         trainer = pl.Trainer(**kwargs)
+        if discard == False:
+            learner.cfg.DATA.DATABASE = '/home/zeyusun/work/flare-prediction-smarp/datasets/M_QSL_24hr'
+        if rus == False:
+            learner.cfg.DATA.BALANCED = False
         dm = ActiveRegionDataModule(learner.cfg)
-        #dm.df_train = dm.df_train.iloc[:32] # smoke test
 
-        # df_train
-        dl_train = dm.get_dataloader(dm.df_train)
-        y_prob = trainer.predict(learner, dataloaders=dl_train)
+    def add_prob_col(df_sample):
+        dataloader = dm.get_dataloader(df_sample)
+        y_prob = trainer.predict(learner, dataloaders=dataloader)
         y_prob = torch.cat(y_prob).detach().cpu().numpy()
-        df_train = dm.df_train.assign(prob=y_prob)
+        df = df_sample.assign(prob=y_prob)
+        return df
+
+    if get_train:
+        df_train = add_prob_col(dm.df_train)
     else:
         df_train = None
+        
+    if rus == False:
+        df_val = add_prob_col(dm.df_vals[0])
+        df_test = add_prob_col(dm.df_test)
+    else:
+        df_val = pd.read_csv(Path(artifact_uri) / 'validation0' / 'val_predictions.csv', index_col=0)
+        df_val = df_val.rename(columns={f'step-{step}': 'prob'})
+        df_val = df_val[[col for col in df_val.columns if 'step-' not in col]]
+        
+        df_test = pd.read_csv(Path(artifact_uri) / 'validation1' / 'val_predictions.csv', index_col=0)
+        df_test = df_test.rename(columns={f'step-{step}': 'prob'})
+        df_test = df_test[[col for col in df_test.columns if 'step-' not in col]]
 
     return df_train, df_val, df_test
 
 
 class LevelOneData:
     """Level-1 data class"""
-    def __init__(self, members=None, get_train=False):
+    def __init__(self, members=None, get_train=False, rus=True, discard=True):
         """
         Args:
             members (List[List[str]]): Groups of learners. Each group's val sets
@@ -222,11 +232,21 @@ class LevelOneData:
                 self.selectors[g].append(s.copy())
                 print(s.values())
                 runs = retrieve(s['experiment'], s['run'])
+                ## backward compatibility
+                if 'params.DATA.VAL_SPLIT' in runs.columns:
+                    s_val_split = (runs['params.DATA.VAL_SPLIT'] == s['val_split'])
+                else:
+                    s_val_split = [True] * len(runs) # don't use pd.Series. different index
+                if 'params.DATA.TEST_SPLIT' in runs.columns:
+                    s_test_split = (runs['params.DATA.TEST_SPLIT'] == s['test_split'])
+                else:
+                    s_test_split = [True] * len(runs)
+                ##
                 selected = runs.loc[
                     (runs['tags.dataset_name'] == s['dataset']) &
                     (runs['params.DATA.SEED'] == s['seed']) &
-                    (runs['params.DATA.VAL_SPLIT'] == s['val_split']) &
-                    (runs['params.DATA.TEST_SPLIT'] == s['test_split']) &
+                    s_val_split &
+                    s_test_split &
                     (runs['tags.estimator_name'] == s['estimator'])
                 ]
                 if len(selected) > 1:
@@ -234,6 +254,8 @@ class LevelOneData:
                 df_train, df_val, df_test  = get_val_csv(
                     selected.iloc[0],
                     get_train if m == 0 else False, # only the first cv train fold will be used
+                    rus=rus,
+                    discard=discard,
                 )
                 self.dataframes[g].append({
                     'train': df_train,
@@ -289,17 +311,23 @@ class LevelOneData:
         else:
             raise
         
-        X = np.stack(_Xs).T
-        if return_err:
-            X_err = np.stack(_Xs_err).T
-        #assert np.all(_ys[0] == _ys[1]) # could be only 1 group (e.g., when we just want to concat five test set to get the entire sharp)
-        y = _ys[0]
-        df = _dfs[0]
-        
-        if return_err:
-            return X, X_err, y, df
-        else:
-            return X, y, df
+        #TODO: _Xs can have different sizes, e.g., when each group consists of K cross validation folds for one test split
+        # The data structure has become too complicated, inoperable, nonflexible, nonextendable.
+        # Is it really necessary to separate X and y from df?
+        try:
+            X = np.stack(_Xs).T
+            if return_err:
+                X_err = np.stack(_Xs_err).T
+            #assert np.all(_ys[0] == _ys[1]) # could be only 1 group (e.g., when we just want to concat five test set to get the entire sharp)
+            y = _ys[0]
+            df = _dfs[0]
+
+            if return_err:
+                return X, X_err, y, df
+            else:
+                return X, y, df
+        except ValueError: #ValueError: all input arrays must have the same shape
+            return _Xs, _ys, _dfs
 
 
 # The followings are used for cross-entropy minimization

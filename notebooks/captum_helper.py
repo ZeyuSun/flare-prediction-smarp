@@ -1,10 +1,16 @@
+import os
+from glob import glob
 from datetime import datetime, timedelta
 from ipdb import set_trace as breakpoint
 import numpy as np
 import pandas as pd
 import xarray as xr
+import imageio
 import matplotlib.pyplot as plt
 from matplotlib.colors import Normalize
+import plotly.express as px
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 from tqdm.notebook import tqdm
 import torch
 from torch.utils.data import DataLoader
@@ -14,10 +20,17 @@ from scipy.ndimage import gaussian_filter
 import sunpy
 from captum.attr import IntegratedGradients, Saliency, DeepLift, GuidedBackprop, GuidedGradCam, Deconvolution, NoiseTunnel, LRP, LayerGradCam, LayerLRP
 
-from arnet.utils import get_layer
+from arnet.utils import get_layer, get_log_intensity
 from arnet.dataset import ActiveRegionDataModule, ActiveRegionDataset
 from arnet.transforms import get_transform
 from cotrain_helper import get_learner_by_query
+
+
+harpnum_to_noaa = np.load('harpnum_to_noaa.npy', allow_pickle=True).item()
+goes_df = pd.read_csv('/home/zeyusun/SOLSTICE/goes/GOES_HMI.csv', index_col=0)
+goes_df['start_time'] = goes_df['start_time'].apply(pd.to_datetime)
+goes_df['intensity'] = goes_df['goes_class'].apply(get_log_intensity)
+goes_df['flare_class'] = goes_df['goes_class'].str[0]
 
 
 def get_heatmap(algorithm, learner, input, target='negate', baselines='zero'):
@@ -185,6 +198,7 @@ def get_heatmaps_from_df(df, algorithms,
     assert num_frames == 1 # See Note
     assert num_frames_after == 0 # See Note
     heatmaps = {a: [None] * len(df) for a in algorithms}
+    df = df.reset_index(drop=True)
     for model_query, subdf in df.groupby('model_query'):
         # # hotfix begin
         # fields = model_query.split('/')
@@ -368,9 +382,11 @@ def plot_heatmaps_info(imgs, algorithms, info,
 
 def plot_heatmaps_contour(images, attribution_maps,
                           sigma=1,
-                          linewidth=2,
+                          linewidth=1.5,
                           figsize=(8,4),
                           headers=None,
+                          info=None,
+                          sunpy_map=False,
                           outlier_perc=2,
                          ):
     """
@@ -378,6 +394,8 @@ def plot_heatmaps_contour(images, attribution_maps,
     """
     figs = {}
     vmax = np.percentile(np.absolute(images), 99)
+    #vmax = 457 # HARP 5982
+    vmax = 500
     for algorithm, heatmap in attribution_maps.items():
         vmax_level = np.percentile(np.absolute(heatmap), 100-outlier_perc) # perceptive max: 0.0115
         figs[algorithm] = []
@@ -386,10 +404,15 @@ def plot_heatmaps_contour(images, attribution_maps,
             mask_smoothed = gaussian_filter(mask, sigma=sigma)
 
             fig = plt.figure(figsize=figsize)
-            if headers is None:
+            if sunpy_map == False:
                 ax = fig.add_subplot(121)
                 ax.imshow(images[0][0,0], vmin=-vmax, vmax=vmax, cmap='gray')
+                if info is not None:
+                    ax.set_title((info['prefix'].iloc[0] + ' ' +
+                                  str(info['arpnum'].iloc[0]) + '   ' +
+                                  info['t_end'].iloc[0]))
             else:
+                assert headers is not None
                 magnetogram = sunpy.map.Map(images[0][0,0], dict(headers.iloc[0]))
                 ax = fig.add_subplot(121, projection=magnetogram)
                 magnetogram.plot(axes=ax, vmin=-vmax, vmax=vmax)
@@ -402,12 +425,18 @@ def plot_heatmaps_contour(images, attribution_maps,
                        linewidths=linewidth,
                        levels=np.array([-vmax_level, vmax_level]),
                        cmap='bwr')
-            ax.axis('off') # Error if I use sunpy Map and don't turn off axis
+            #ax.axis('off') # Error if I use sunpy Map and don't turn off axis
+            # Do not turn off axis. At least give the readers the pixels
 
-            if headers is None:
+            if sunpy_map == False:
                 ax = fig.add_subplot(122)
                 ax.imshow(images[t][0,0], vmin=-vmax, vmax=vmax, cmap='gray')
+                if info is not None:
+                    ax.set_title((info['prefix'].iloc[t] + ' ' +
+                                  str(info['arpnum'].iloc[t]) + '   ' +
+                                  info['t_end'].iloc[t]))
             else:
+                assert headers is not None
                 magnetogram = sunpy.map.Map(images[t][0,0], dict(headers.iloc[t]))
                 ax = fig.add_subplot(122, projection=magnetogram)
                 magnetogram.plot(axes=ax, vmin=-vmax, vmax=vmax)
@@ -419,10 +448,123 @@ def plot_heatmaps_contour(images, attribution_maps,
                        levels=np.array([-vmax_level, vmax_level]),
                        linewidths=linewidth,
                        cmap='bwr')
-            ax.axis('off')
+            #ax.axis('off')
             fig.tight_layout()
             figs[algorithm].append(fig)
     return figs
+
+
+def draw_contour(df):
+    arpnum, t_end = df['arpnum'].iloc[0], df['t_end'].iloc[0]
+    savedir = f'contours/{arpnum}/{t_end}'
+    if not os.path.exists(savedir):
+        os.makedirs(savedir)
+    algorithm = 'DeepLift'# 'IntegratedGradients' #
+    
+    heatmaps = get_heatmaps_from_df(df, ['Original', algorithm], baseline_type='first')
+    heatmaps = resize_heatmaps(heatmaps, df)
+    headers = pd.concat([load_data_and_header(df['prefix'].iloc[i],
+                                              df['arpnum'].iloc[i],
+                                              pd.to_datetime(df['t_end'].iloc[i]),
+                                              only_header=True)
+                         for i in range(len(df))])
+    figs = plot_heatmaps_contour(
+        heatmaps['Original'],
+        {algorithm: heatmaps[algorithm]},
+        sigma=3, # 5982: 2
+        figsize=(12, 3),
+        linewidth=2,
+        info=df,
+        outlier_perc=1, # 5982: 1.1
+    )
+    
+    # Save figure
+    for Algorithm in figs:
+        for t, fig in enumerate(figs[Algorithm]):
+            fig.savefig(os.path.join(savedir, f'{t}.png'), dpi=300)
+
+    # Save animation
+    filenames = sorted(list(glob(savedir + '/*.png')),
+                       key=lambda path: int(path.split('/')[-1].replace('.png', '')))
+    images = list(map(lambda filename: imageio.imread(filename), filenames))
+    imageio.mimsave(os.path.join(savedir, 'contour_movie.gif'), images, duration = 0.5) # modify duration as needed
+    
+    # Time series
+    val_split = df['model_query'].iloc[0].split('/')[-3]
+    df_flares = goes_df.loc[
+        (goes_df['noaa_active_region'].isin(harpnum_to_noaa[arpnum])) &
+        (goes_df['start_time'] >= df['t_end'].min()) &
+        (goes_df['start_time'] - timedelta(hours=24)<= df['t_end'].max())]
+    fig = plot_time_series(arpnum, df, df_flares, prob_columns=[f'prob_CNN_{val_split}']) # for val_split in range(5)])
+    #fig.show()
+    fig.update_layout(
+        height=200,
+        width=900,
+        margin=go.layout.Margin(
+            l=0, #left margin
+            r=0, #right margin
+            b=0, #bottom margin
+            t=30  #top margin
+        )
+    )
+    #fig.show(renderer="png")
+    fig.write_image(os.path.join(savedir, 'time_series.pdf'))
+
+
+def draw_attribution(df, algorithms):
+    df = df.reset_index(drop=True)
+    zmin, zmax = None, None
+    color_continuous_scale = [
+        px.colors.sequential.gray,
+        *([px.colors.diverging.RdBu_r] * (len(algorithms)-1)), #balance # white for 0.
+    ]
+    
+    heatmaps = get_heatmaps_from_df(df, algorithms, baseline_type='first')
+
+    heatmaps = resize_heatmaps(heatmaps, df)
+
+    #### Movie
+    # # when df is a continuous time series for an active region
+    # # concatenate all heatmaps along the time dimension
+    # imgs = np.array([np.concatenate(heatmaps[a], axis=1)[0] for a in heatmaps])
+    # algorithms = list(heatmaps.keys())
+    # fig = plot_heatmaps_info(imgs, algorithms, df,
+                             # zmin, zmax, color_continuous_scale,
+                             # animation_frame=1, facet_col_wrap=2)
+    # fig.show(config={'modeBarButtonsToAdd':['drawopenpath', 'eraseshape']})
+    # #fig.write_html('captum_movie_first.html')
+    
+    #### Static (Practically, only the last frame is useful)
+    g = lambda m: m[0, 0, :, :]
+    # for i in df.index[[-1]]:
+    i = df.index[-1]
+    imgs = np.array([g(heatmaps[a][i]) for a in heatmaps])
+    algorithms = list(heatmaps.keys())
+    fig = plot_heatmaps_info(imgs, algorithms, df.iloc[i],
+                             zmin, zmax, color_continuous_scale,
+                             #facet_col_wrap=3,
+                             animation_frame=None)
+    kwargs = {f'{xy}axis{i}': {'showticklabels': False}
+              for i in ['', *range(2, len(algorithms)+1)]
+              for xy in ['x', 'y']}
+    #height = 200
+    width = 1500
+    wh_ratio = len(algorithms) * 0.95 * (imgs.shape[2] / imgs.shape[1])
+    # Width should be constant as we will put it in paper, on website, etc.
+    fig.update_layout(
+        margin={'l': 0, 'r': 0, 't': 20, 'b': 0}, # title seems to be out of margin
+        height=width / wh_ratio,
+        width=width,
+        **kwargs,
+    )
+    # Do not show. Too big. 384 MB for two images
+    #fig.show(config={'modeBarButtonsToAdd':['drawopenpath', 'eraseshape']})
+    filename = 'contours/{}/{}/{}'.format(df.loc[i, 'arpnum'],
+                                          df.loc[0, 't_end'],
+                                          'last')
+    fig.write_image(filename + '.png')
+    fig.write_image(filename + '.pdf')
+    return fig
 
 
 def plot_heatmaps_overlay(heatmaps):
@@ -546,10 +688,6 @@ def plot_heatmaps(imgs, zmin, zmax, color_continuous_scale, animation_frame=None
     Args:
         imgs: np.ndarray of shape (N, H, W)
     """
-    import plotly.express as px
-    import plotly.graph_objects as go
-    from plotly.subplots import make_subplots
-
     ## Solution 0: matplotlib
     #norm = Normalize(vmin=-0.1, vmax=0.1, clip=True)
     #f = lambda m: norm(m[0].transpose(1,2,0))
@@ -661,8 +799,6 @@ def add_pred(fig, prob, pred_color=None):
 
 
 def get_fits_data_filepath(prefix, arpnum, time):
-    import os
-    
     if prefix == 'HARP':
         series = 'hmi.sharp_cea_720s'
         data_dir = '/data2/SHARP/image/'
@@ -679,8 +815,6 @@ def get_fits_data_filepath(prefix, arpnum, time):
 
 
 def get_fits_header_filepath(prefix, arpnum):
-    import os
-    
     if prefix == 'HARP':
         database = 'SHARP'
     elif prefix == 'TARP':
@@ -694,6 +828,11 @@ def get_fits_header_filepath(prefix, arpnum):
 
 def load_data_and_header(prefix, arpnum, time, only_header=False):
     """
+    Args:
+        prefix (str):
+        arpnum (int):
+        time (datetime):
+        only_header (bool):
     To show the data:
     ```python
     sunpy.map.Map(data, dict(header.iloc[0])).peek()

@@ -222,6 +222,25 @@ def tabulate_pvalues(runs):
     #df.set_index(['S', 'estimator', 'tested hypothesis'])
 
 
+def tabulate_pvalues_estimator(runs):
+    items = []
+    for dataset_name in ['fused_sharp', 'sharp', 'fused_smarp', 'smarp']:
+        for metric in ['ACC', 'AUC', 'TSS', 'HSS', 'BSS']:
+            a = runs.loc[get_mask(runs, dataset_name, 'LSTM'), metric].tolist()
+            b = runs.loc[get_mask(runs, dataset_name, 'CNN'), metric].tolist()
+            statistic, pvalue = paired_ttest(a, b)
+            items.append({
+                'S': metric,
+                'dataset': dataset_name,
+                'tested hypothesis': f'S(LSTM) > S(CNN)',
+                't': statistic,
+                'p-value': pvalue
+            })
+    df = pd.DataFrame(items)
+    return df
+    #df.set_index(['S', 'estimator', 'tested hypothesis'])
+
+
 def download_figures(runs_raw, dataset_name, seed, estimator_name, output_dir=None):
     import os, shutil
 
