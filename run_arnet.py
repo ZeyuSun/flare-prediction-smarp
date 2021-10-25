@@ -81,6 +81,10 @@ def launch(config, modes, resume, opts):
     # cfg.freeze()
 
     dm = ActiveRegionDataModule(cfg) # datamodule construction also changes transformation params
+    print(cfg.DATA.DATASET)
+    print((len(dm.df_train), len(dm.df_vals[0]), len(dm.df_test)))
+    return
+
     cfg = dm.set_class_weight(cfg)
 
     mlflow.log_params({key: val
@@ -155,8 +159,8 @@ def sweep():
     parser.add_argument('-d', '--data_root', default='datasets')
     parser.add_argument('-c', '--config_root', default='arnet/configs')
     parser.add_argument('-s', '--smoke', action='store_true')
-    parser.add_argument('-e', '--experiment_name', default='LSTM')
-    parser.add_argument('-r', '--run_name', default='lstm_more_patience')
+    parser.add_argument('-e', '--experiment_name', default='smoke')
+    parser.add_argument('-r', '--run_name', default='smoke')
     parser.add_argument('opts', default=None, nargs=argparse.REMAINDER)
     args = parser.parse_args()
     if args.smoke:
@@ -178,9 +182,9 @@ def sweep():
     with mlflow.start_run(run_name=args.run_name):
         for database in databases:
             for balanced in [True]:
-                for dataset in ['sharp', 'fused_sharp']:
+                for dataset in ['sharp', 'fused_sharp', 'smarp', 'fused_smarp']:
                     for config in configs:
-                        for seed in range(5):
+                        for seed in range(1):
                             opts = [
                                 'DATA.DATABASE', database,
                                 'DATA.DATASET', dataset,
