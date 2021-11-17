@@ -65,8 +65,7 @@ def confusion_matrix(
                 [0., 0., 1., 0.],
                 [0., 0., 0., 1.]])
     """
-    from pytorch_lightning.metrics.utils import get_num_classes
-    num_classes = get_num_classes(pred, target, num_classes)
+    num_classes = num_classes or 2
 
     unique_labels = target.view(-1) * num_classes + pred.view(-1)
 
@@ -83,11 +82,11 @@ def get_thresh(y_true, y_prob, criterion=None):
     if criterion is None:
         return 0.5
 
-    from pytorch_lightning.metrics.functional import roc
+    from torchmetrics.functional import roc
     if y_true.sum() == 0:
         logging.warning('Return thresh 0.5, because no positive samples in targets, true positive value should be meaningless')
         return 0.5 # ValueError: No positive samples in targets, true positive value should be meaningless
-    fpr, tpr, thresholds = roc(y_prob, y_true) #, num_classes=2)
+    fpr, tpr, thresholds = roc(y_prob, y_true)
     fpr, tpr, thresholds = fpr[1:], tpr[1:], thresholds[1:]  # remove added point
     if criterion == 'tss':
         TSS = tpr - fpr
@@ -137,7 +136,7 @@ def get_metrics_probabilistic(y_true, y_prob, criterion='tss'):
     =====================================================
     """
     import torch
-    from pytorch_lightning.metrics.functional import auroc
+    from torchmetrics.functional import auroc
     #from sklearn.metrics import roc_auc_score
     if not isinstance(y_true, torch.Tensor):
         y_true = torch.tensor(y_true)

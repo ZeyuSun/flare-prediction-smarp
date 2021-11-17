@@ -3,7 +3,7 @@ from collections import OrderedDict
 import torch
 from torch import nn
 from torch.nn import functional as F
-from torchsummary import summary
+from torchinfo import summary
 from fvcore.common.registry import Registry
 
 from arnet import utils

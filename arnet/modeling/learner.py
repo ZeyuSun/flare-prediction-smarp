@@ -44,17 +44,14 @@ class Learner(pl.LightningModule):
         return self.model(*args, **kwargs)
 
     def on_load_checkpoint(self, checkpoint) -> None:
-        ckpt_dict = checkpoint['callbacks'][pl.callbacks.model_checkpoint.ModelCheckpoint]
-        log_dir = os.path.dirname(ckpt_dict['dirpath'])
-        root_dir, version = os.path.split(log_dir)
-        save_dir, name = os.path.split(root_dir)
-        #  log_dev / lightning_logs / version_0 / checkpoints
+        ckpt_list = checkpoint['hyper_parameters']['cfg']['LEARNER']['CHECKPOINT'].split('/')
+        #  log_dev / lightning_logs / version_0 / checkpoints / epoch=0-step=4.ckpt
         # =======================================
         # save_dir /    (name)        (version)
         # ------- root_dir ---------/
         # ------------ log_dir ----------------/
         self.logger_save_dir, self.logger_name, self.logger_version = (
-            save_dir, name, version)
+            ckpt_list[-5], ckpt_list[-4], ckpt_list[-3])
 
     def grad_norm(self, norm_type: Union[float, int, str]) -> Dict[str, float]:
         """Compute each parameter's gradient's norm and their overall norm.
