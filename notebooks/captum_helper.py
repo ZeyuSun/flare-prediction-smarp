@@ -559,17 +559,17 @@ def draw_attribution(df, algorithms):
     )
     # Do not show. Too big. 384 MB for two images
     #fig.show(config={'modeBarButtonsToAdd':['drawopenpath', 'eraseshape']})
-    filename = 'contours/{}/{}/{}'.format(df.loc[i, 'arpnum'],
-                                          df.loc[0, 't_end'],
-                                          'last')
-    fig.write_image(filename + '.png')
-    fig.write_image(filename + '.pdf')
+    #filename = 'contours/{}/{}/{}'.format(df.loc[i, 'arpnum'],
+    #                                      df.loc[0, 't_end'],
+    #                                      'last')
+    #fig.write_image(filename + '.png')
+    #fig.write_image(filename + '.pdf')
     return fig
 
 
-def plot_heatmaps_overlay(heatmaps):
+def plot_heatmaps_overlay(heatmaps, algorithm='GuidedBackprop', sign='absolute'):
     images = heatmaps['Original']
-    attrs = heatmaps['GuidedBackprop']
+    attrs = heatmaps[algorithm]
     outlier_perc = 0.2
     
     figs = []
@@ -585,7 +585,7 @@ def plot_heatmaps_overlay(heatmaps):
             attr,
             image,
             method='blended_heatmap', #'masked_image', #'blended_heatmap',
-            sign='absolute', #'all', #'absolute',
+            sign=sign, #'all', #'absolute',
             thresh_image=vmax_image,
             thresh_attr=vmax_attr,
         )
