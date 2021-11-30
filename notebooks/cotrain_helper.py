@@ -552,6 +552,14 @@ def meta_learn(levelone, train=False, axis_titles=None, run_name='temp'):
             X_train, y_train, df_train = levelone.get_split('train')
         X_val, y_val, df_val = levelone.get_split('val')
         X_test, y_test, df_test = levelone.get_split('test')
+        for name, X, y, df in [
+            ['train', X_train, y_train, df_train],
+            ['val', X_val, y_val, df_val],
+            ['test', X_test, y_test, df_test],
+        ]:
+            df[['LSTM', 'CNN']] = X
+            df.to_csv(f'stacking_{name}.csv')
+
 
         if train:
             fig = plot_level_one_naive(X_train, y_train, axis_titles=axis_titles, meta=df_train)
@@ -910,25 +918,25 @@ def meta_learn_show_results(run_name='cv',
 
 
 if __name__ == '__main__':
-    #for dataset_name in ['sharp', 'fused_sharp', 'smarp', 'fused_smarp']:
-    #    for seed in range(5):
-    #        members = [
-    #            f'leaderboard3/val_tss/{dataset_name}/{seed}/LSTM',
-    #            f'////CNN'
-    #        ]
-    #        axis_titles = ['LSTM predicted probability', 'CNN predicted probability']
-    #        levelone = LevelOneData(members, get_train=True)
-    #        meta_learn(levelone, train=True, axis_titles=axis_titles, run_name='estimator')
+    for dataset_name in ['smarp']:
+        for seed in range(3,4):
+            members = [
+                f'leaderboard3/val_tss/{dataset_name}/{seed}/0/0/LSTM',
+                f'//////CNN'
+            ]
+            axis_titles = ['LSTM predicted probability', 'CNN predicted probability']
+            levelone = LevelOneData(members, get_train=True)
+            meta_learn(levelone, train=True, axis_titles=axis_titles, run_name='FN_bug_reproduce')
 
     #for dataset_name in ['sharp', 'fused_sharp', 'smarp', 'fused_smarp']:
     #    for seed in range(5, 10):
     #        members = [
-    #            f'leaderboard3/val_tss_2/{dataset_name}/{seed}/LSTM',
-    #            f'////CNN'
+    #            f'leaderboard3/val_tss_2/{dataset_name}/{seed}/0/0/LSTM',
+    #            f'//////CNN'
     #        ]
     #        axis_titles = ['LSTM', 'CNN']
     #        levelone = LevelOneData(members, get_train=True)
-    #        meta_learn(levelone, train=True, axis_titles=axis_titles, run_name='estimator_2')
+    #        meta_learn(levelone, train=True, axis_titles=axis_titles, run_name='FN_bug_2_reproduce')
 
     # Figure remaking
     #members = [
@@ -953,18 +961,18 @@ if __name__ == '__main__':
     #            levelone = LevelOneData(members, get_train=False)
     #            meta_learn(levelone, train=False, axis_titles=axis_titles, run_name=run_name)
     
-    run_name = 'cv'
-    for dataset_name in ['sharp', 'fused_sharp', 'smarp', 'fused_smarp']:
-        for test_split in range(5):
-            members = [[f'cv/base/{dataset_name}/0/0/{test_split}/LSTM',
-                        '////1//',
-                        '////2//',
-                        '////3//',
-                        '////4//'],
-                       [f'cv/base/{dataset_name}/0/0/{test_split}/CNN',
-                        '////1//',
-                        '////2//',
-                        '////3//',
-                        '////4//']]
-            levelone = LevelOneData(members, get_train=True)
-            meta_learn(levelone, train=True, run_name=run_name)
+    #run_name = 'cv'
+    #for dataset_name in ['sharp', 'fused_sharp', 'smarp', 'fused_smarp']:
+    #    for test_split in range(5):
+    #        members = [[f'cv/base/{dataset_name}/0/0/{test_split}/LSTM',
+    #                    '////1//',
+    #                    '////2//',
+    #                    '////3//',
+    #                    '////4//'],
+    #                   [f'cv/base/{dataset_name}/0/0/{test_split}/CNN',
+    #                    '////1//',
+    #                    '////2//',
+    #                    '////3//',
+    #                    '////4//']]
+    #        levelone = LevelOneData(members, get_train=True)
+    #        meta_learn(levelone, train=True, run_name=run_name)
