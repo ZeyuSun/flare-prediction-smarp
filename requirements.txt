@@ -117,4 +117,4 @@ yacs==0.1.8
 yarl==1.6.3
 zipp==3.6.0
 
-sunpy[net]==3
+sunpy==3.1.2 # stable as of Dec 18, 2021

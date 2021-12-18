@@ -8,7 +8,8 @@ import pandas as pd
 from tqdm import tqdm, trange
 import drms
 from sunpy.time import TimeRange
-from sunpy.instr.goes import get_goes_event_list
+from sunpy.net import Fido
+from sunpy.net import attrs as a
 
 
 ######### Change these ##########
@@ -139,14 +140,27 @@ def download_smarp_images(tarpnum):
 
 
 def download_goes_per_year(year):
+    print(year)
     t_start = datetime(year=year, month=1, day=1)
     t_end = datetime(year=year+1, month=1, day=1)
-    timerange = TimeRange(t_start, t_end)
-    event_list = get_goes_event_list(timerange)
-    if len(event_list) == 0:
+    results = Fido.search(
+        a.Time(t_start, t_end),
+        a.hek.EventType("FL"),
+        # a.hek.FL.GOESCls > "M1.0",
+        a.hek.OBS.Observatory == "GOES"
+    )
+    if not results.all_colnames: # no columns / no results
         return None
 
-    event_df = pd.DataFrame(event_list)
+    event_table = results['hek']["event_starttime", "event_peaktime", "event_endtime", "fl_goescls", "ar_noaanum"]
+    event_df = event_table.to_pandas().rename(columns={
+        'event_starttime': 'start_time',
+        'event_peaktime': 'peak_time',
+        'event_endtime': 'end_time',
+        'fl_goescls': 'goes_class',
+        #'hgc_coord': 'goes_location',
+        'ar_noaanum': 'noaa_active_region',
+    })
     event_df = event_df[event_df['noaa_active_region'] != 0]
     if len(event_df) == 0:
         return None
@@ -204,15 +218,15 @@ if __name__ == '__main__':
     download_goes()
 
     # Last record we consider: hmi.sharp_cea_720s[7544][2021.02.03_04:12:00_TAI]
-    results = batch_run(download_sharp_headers, 50, 100)
+    results = batch_run(download_sharp_headers, 200, 100)
     analyze(results, 'sharp_headers')
 
     # SMARP has TARPNUM from 1 to 13670
-    results = batch_run(download_smarp_headers, 50, 1000)
+    results = batch_run(download_smarp_headers, 200, 1000)
     analyze(results, 'smarp_headers')
 
-    results = batch_run(download_sharp_images, 50, 100)
+    results = batch_run(download_sharp_images, 200, 100)
     analyze(results, 'sharp_images', images=True)
 
-    results = batch_run(download_smarp_images, 50, 1000)
+    results = batch_run(download_smarp_images, 200, 1000)
     analyze(results, 'smarp_images', images=True)
