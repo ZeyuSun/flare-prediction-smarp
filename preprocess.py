@@ -301,7 +301,7 @@ if __name__ == '__main__':
     # raise
 
     # begin preprocessing
-    for criterion in ['M_Q', 'M_QS', 'M_QSL']:
+    for criterion in ['M_Q']:
         for val_hours in [24]:
             output_dir = f'{criterion}_{val_hours}hr'
             logger.info(output_dir)
