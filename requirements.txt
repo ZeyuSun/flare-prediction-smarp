@@ -105,10 +105,6 @@ threadpoolctl==3.0.0
 tifffile==2021.8.8
 toml==0.10.2
 tomli==1.2.2
-torch==1.10.0
-torchinfo==1.5.3
-torchmetrics==0.6.0
-torchvision==0.11.1
 tqdm==4.62.2
 traitlets==5.0.5
 typing-extensions==3.10.0.1
@@ -120,3 +116,5 @@ wrapt==1.13.3
 yacs==0.1.8
 yarl==1.6.3
 zipp==3.6.0
+
+sunpy[net]==3

@@ -143,7 +143,7 @@ def select_per_arp(dataset, arpnum,
     shapes = []
     for t_rec in df.index:
         image_file = get_image_filepath(dataset, arpnum, t_rec)
-        image_data = query_images(image_file)
+        image_data = query_images(image_file, redis=False)
         df.loc[t_rec, 'bad_img'] = np.any(np.isnan(image_data))
         df.loc[t_rec, 'HEIGHT'] = image_data.shape[0]
         df.loc[t_rec, 'WIDTH'] = image_data.shape[1]

@@ -7,7 +7,7 @@ import redis
 from astropy.io import fits
 
 
-DATA_DIR = '/data2'
+DATA_DIR = '/content/drive/Shareddrives/Flare Forecast Data/'
 r_header = redis.Redis(db=3)
 r_image = redis.Redis(db=13)
 

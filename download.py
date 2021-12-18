@@ -13,7 +13,7 @@ from sunpy.instr.goes import get_goes_event_list
 
 ######### Change these ##########
 EMAIL = 'szymails@gmail.com'
-RAW_DATA_DIR = '/data2'
+RAW_DATA_DIR = '/content/drive/Shareddrives/Flare Forecast Data/'
 #################################
 
 
@@ -204,15 +204,15 @@ if __name__ == '__main__':
     download_goes()
 
     # Last record we consider: hmi.sharp_cea_720s[7544][2021.02.03_04:12:00_TAI]
-    results = batch_run(download_sharp_headers, 7544, 100)
+    results = batch_run(download_sharp_headers, 50, 100)
     analyze(results, 'sharp_headers')
 
     # SMARP has TARPNUM from 1 to 13670
-    results = batch_run(download_smarp_headers, 14000, 1000)
+    results = batch_run(download_smarp_headers, 50, 1000)
     analyze(results, 'smarp_headers')
 
-    results = batch_run(download_sharp_images, 7544, 100)
+    results = batch_run(download_sharp_images, 50, 100)
     analyze(results, 'sharp_images', images=True)
 
-    results = batch_run(download_smarp_images, 14000, 1000)
+    results = batch_run(download_smarp_images, 50, 1000)
     analyze(results, 'smarp_images', images=True)

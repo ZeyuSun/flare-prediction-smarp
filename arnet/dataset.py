@@ -96,7 +96,7 @@ class ActiveRegionDataset(Dataset):
         t_end = datetime.strptime(s['t_end'], '%Y-%m-%d %H:%M:%S').strftime('%Y%m%d%H%M%S')
         largest_flare = max(s['flares'].split('|')) #WARNING: X10+
         meta = f'{idx}_{s["prefix"]}{s["arpnum"]:06d}_{t_end}_H0_W0_{largest_flare}.npy'
-        return *data_list, label, meta
+        return (*data_list, label, meta)
 
     def load_video(self, prefix, arpnum, t_now, bad_img_idx):
         t_now = drms.to_datetime(t_now)
