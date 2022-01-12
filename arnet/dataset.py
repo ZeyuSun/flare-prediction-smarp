@@ -180,6 +180,7 @@ class ActiveRegionDataModule(pl.LightningDataModule):
             seed=self.cfg.DATA.SEED,
             val_split=getattr(self.cfg.DATA, 'VAL_SPLIT', None),
             test_split=getattr(self.cfg.DATA, 'TEST_SPLIT', None),
+            rus_test=False,
         )
         df_vals = [df_val, df_test]
 

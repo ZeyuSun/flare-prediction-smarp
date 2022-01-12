@@ -30,7 +30,7 @@ cfg.DATA.HEIGHT = 64
 cfg.DATA.WIDTH = 128
 # Dataloader config
 cfg.DATA.BATCH_SIZE = 64
-cfg.DATA.NUM_WORKERS = 8
+cfg.DATA.NUM_WORKERS = 8 # suggested to be 8 by pytorch.
 cfg.DATA.TRANSFORMS = [
     'Resize', # 'CenterCropPad'
     #'ValueTransform',

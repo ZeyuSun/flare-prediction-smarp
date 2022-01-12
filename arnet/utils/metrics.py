@@ -138,6 +138,7 @@ def get_metrics_probabilistic(y_true, y_prob, criterion='tss'):
     import torch
     from torchmetrics.functional import auroc
     #from sklearn.metrics import roc_auc_score
+    # if y_true is pd.Series, then we should input .values or .to_numpy()
     if not isinstance(y_true, torch.Tensor):
         y_true = torch.tensor(y_true)
     if not isinstance(y_prob, torch.Tensor):

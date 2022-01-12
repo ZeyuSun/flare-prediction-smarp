@@ -68,7 +68,7 @@ class Resize():
         dt = torch.linspace(-1, 1, T)
         dh = torch.linspace(-1, 1, self.target_size[0])
         dw = torch.linspace(-1, 1, self.target_size[1])
-        meshz, meshy, meshx = torch.meshgrid([dt, dh, dw])
+        meshz, meshy, meshx = torch.meshgrid([dt, dh, dw], indexing='ij')
         grid = torch.stack((meshx, meshy, meshz), 3)
         resized_video = F.grid_sample(
             video.unsqueeze(0),

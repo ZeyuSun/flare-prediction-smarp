@@ -202,11 +202,12 @@ def print_pvalues(runs, dataset_name):
             print(metric, paired_ttest(a, b))
 
 
-def tabulate_pvalues(runs):
+def tabulate_pvalues(runs, metrics=None):
+    metrics = metrics or ['ACC', 'AUC', 'TSS', 'HSS', 'BSS']
     items = []
     for dataset_name in ['sharp', 'smarp']:
         for estimator_name in ['LSTM', 'CNN']:
-            for metric in ['ACC', 'AUC', 'TSS', 'HSS', 'BSS']:
+            for metric in metrics:
                 a = runs.loc[get_mask(runs, 'fused_'+dataset_name, estimator_name), metric].tolist()
                 b = runs.loc[get_mask(runs, dataset_name, estimator_name), metric].tolist()
                 statistic, pvalue = paired_ttest(a, b)
@@ -260,8 +261,8 @@ def download_figures(runs_raw, dataset_name, seed, estimator_name, output_dir=No
         dst = os.path.join(output_dir, f'{seed}_{estimator_name}_{dataset_name}_{figure}.png')
         # dst = 'temp/LSTM_fused_sharp_1_ssp.png'
         shutil.copy(src, dst)
-        
-        
+
+
 def unstack_reps(runs_raw, index_cols=None, rep_col=None, metric_cols=None):
     #index_cols = index_cols or ['params.dataset0', 'params.estimator0', 'params.criterion']
     #rep_col = rep_col or 'params.seed0'
@@ -272,3 +273,115 @@ def unstack_reps(runs_raw, index_cols=None, rep_col=None, metric_cols=None):
           .unstack(-1)
          )
     return df
+
+
+def run_test():
+    # Arguments:
+    experiment_name, run_name = 'leaderboard3', 'val_tss_2'
+    datasets = ['sharp', 'fused_sharp', 'smarp', 'fused_smarp']
+    seeds = [str(i) for i in range(5,10)]
+    estimators = ['LSTM', 'CNN']
+
+    from functools import lru_cache
+    from itertools import product
+    import numpy as np
+    import pandas as pd
+    import matplotlib.pyplot as plt
+    import plotly.express as px
+    import torch
+    import pytorch_lightning as pl
+    from tqdm import tqdm
+
+    from arnet import utils
+    from arnet.dataset import ActiveRegionDataModule
+    from arnet.modeling.learner import Learner
+    from cotrain_helper import get_learner_by_query
+
+    runs_raw = retrieve(experiment_name, run_name)
+    runs = []
+    for dataset, seed, estimator in tqdm(product(datasets, seeds, estimators)):
+        selected = runs_raw.loc[
+            (runs_raw['tags.dataset_name'] == dataset) &
+            (runs_raw['params.DATA.SEED'] == seed) &
+            (runs_raw['tags.estimator_name'] == estimator)
+        ]
+
+        ckpt_path = selected['tags.checkpoint'].iloc[0]
+        learner = Learner.load_from_checkpoint(ckpt_path)
+        learner.eval()
+        learner.to('cuda:0')
+        # hotfix
+        learner.cfg.DATA.NUM_WORKERS = 8
+
+        kwargs = learner.cfg.TRAINER.todict()
+        kwargs['default_root_dir'] = 'lightning_logs_dev'
+        trainer = pl.Trainer(**kwargs)
+
+        dm = ActiveRegionDataModule(learner.cfg)
+        df = dm.df_test
+        dl = dm.get_dataloader(df)
+
+        y_prob = trainer.predict(learner, dataloaders=dl)
+        y_prob = torch.cat(y_prob).detach().cpu().numpy()
+        y_true = df['label'].to_numpy()
+        df['prob'] = y_prob
+        df['pred'] = (y_prob > 0.5)
+        df[['label', 'pred']] = df[['label', 'pred']].astype(int)
+        metrics, _, _ = utils.get_metrics_probabilistic(
+            df['label'].values,
+            df['prob'].values,
+            criterion=None,
+        )
+        metrics = {k: float(v) for k, v in metrics.items()}
+        metrics.update({
+            'dataset': dataset,
+            'seed': seed,
+            'estimator': estimator,
+        })
+        runs.append(metrics)
+
+    ## Metric statistics
+    df_runs = pd.DataFrame(runs)
+    df_runs = df_runs.rename(columns={
+        'accuracy': 'ACC',
+        'precision': 'PRECISION',
+        'recall': 'RECALL',
+        'f1': 'F1',
+        'auc': 'AUC',
+        'tss': 'TSS',
+        'hss2': 'HSS',
+        'bss': 'BSS',
+    })
+    #df_results = organize(df_runs, std=True)
+    """Typeset can be cumbersome and subject to change. And the format is only important to writing paper, not reproducing results. Therefore, put it in a function and call it outside"""
+    #print(df_results)
+
+    ## Paired t-tests of datasets
+    # df_ttest = tabulate_pvalues(df_runs)
+    # Typeset is bad
+    # df_ttest = (df_ttest
+    #  .set_index(['S', 'estimator', 'tested hypothesis'])
+    #  .sort_index() # group multiindex
+    #  .unstack(-1)
+    #  .swaplevel(axis=1)
+    #  .sort_index(level=0, axis=1) # group column multiindex
+    # ).loc[['ACC', 'AUC', 'TSS', 'HSS', 'BSS']]
+    # print(typeset(df_ttest))
+
+    ## Paired t-tests of models
+
+    ## Stacking
+    """
+    Always do hierarchical. Seperate the experiments that don't belong together. You always have the option to organize the experiments with a higher level function.
+    """
+    # for dataset in datasets:
+    #     for seed in seeds:
+    #         members = [
+    #             f'{experiment_name}/{run_name}/{dataset}/{seed}/0/0/LSTM',
+    #             f'//////CNN'
+    #         ]
+    #         axis_titles = ['LSTM predicted probability', 'CNN predicted probability']
+    #         levelone = LevelOneData(members, get_train=True)
+    #         meta_learn(levelone, train=True, axis_titles=axis_titles, run_name='FN_bug_reproduce')
+
+    return df_runs

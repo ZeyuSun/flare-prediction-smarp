@@ -3,8 +3,8 @@ import numpy as np
 import pandas as pd
 
 
-def load_csv_dataset(csv_path):
-    df = pd.read_csv(csv_path)
+def load_csv_dataset(csv_path, **kwargs):
+    df = pd.read_csv(csv_path, **kwargs)
     df.loc[:, 'flares'] = df['flares'].fillna('')
     df.loc[:, 'bad_img_idx'] = df['bad_img_idx'].apply(
         lambda s: [int(x) for x in s.strip('[]').split()])
@@ -61,6 +61,14 @@ def rus(df, sizes='balanced', seed=False):
     pos = np.where(df['label'])[0]
     if sizes == 'balanced':
         sizes = {0: len(pos), 1:len(pos)}
+    elif isinstance(sizes, float):
+        # sizes = p/n after rus
+        #   ranges 0.03 (no rus) to 1 (balanced)
+        # compute rus rate (the proportion of neg samples to keep)
+        #   rus rate: 1 to 0.03
+        rus_rate = (len(pos) / sizes) / len(neg)
+        rus_rate = min(sizes, 1) # prevent raise in np.random.choice
+        sizes = {0: int(rus_rate * len(neg)), 1: len(pos)}
     idx = np.concatenate((
         np.random.choice(neg, size=sizes[0], replace=False),
         np.random.choice(pos, size=sizes[1], replace=False),
@@ -73,13 +81,17 @@ def rus(df, sizes='balanced', seed=False):
 def get_datasets(database, dataset, auxdata,
                  sizes=None, validation=False, shuffle=False, seed=None,
                  val_split=0, test_split=0,
+                 rus_test=True,
     ):
     """
     Args:
         sizes: Dict of desired class sizes. None: no rus. 'balanced': balanced rus.
     """
     df_smarp = load_csv_dataset(Path(database) / 'smarp.csv')
-    df_sharp = load_csv_dataset(Path(database) / 'sharp.csv')
+    df_sharp = load_csv_dataset(Path(database) / 'sharp.csv', low_memory=False)
+    # Warning: Col(7) in sharp.csv (maybe noaa_ars) has mixed type. SMARP doesn't have this warning.
+    # low_memory=False is as fast as low_memory=True (perhaps the same implementation)
+    # low_memory=False is 5x faster than engine=python
     fuse_dict = load_fusion_dataset(Path(auxdata))
     # Two keys are outdated. fuse_dict =
     #{'MEANGBZ': {'coef': 1.9920261748674042, 'intercept': 8.342889969768606},
@@ -122,9 +134,10 @@ def get_datasets(database, dataset, auxdata,
 
     if sizes: # Why rus after split? Strict ratio; Option to rus only train
         df_train = rus(df_train, sizes=sizes, seed=seed)
-        if validation:
+        if validation: # validation controls both existence of balance
             df_val = rus(df_val, sizes=sizes, seed=seed)
-        df_test = rus(df_test, sizes=sizes, seed=seed)
+        if rus_test: # rus_test only controls existence
+            df_test = rus(df_test, sizes=rus_test, seed=seed)
 
     if shuffle:
         df_train = df_train.sample(frac=1, random_state=seed)
