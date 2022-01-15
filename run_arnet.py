@@ -143,26 +143,31 @@ def sweep():
     if args.smoke:
         args.experiment_name = 'smoke_arnet'
         args.opts.extend([
-            'TRAINER.limit_train_batches', '5',
+            'TRAINER.limit_train_batches', '2',
             'TRAINER.limit_val_batches', '2',
             'TRAINER.limit_test_batches', '2',
             'TRAINER.max_epochs', '1',
             'TRAINER.default_root_dir', 'lightning_logs_dev'
         ])
-
+        num_seeds = 1
+        configs = [Path('arnet/configs').absolute() / f'{c}.yaml' for c in ['MLP', 'LSTM', 'CNN', 'C3D', 'FusionC3D']]
+        datasets = ['fused_sharp']
+    else:
+        num_seeds = 10
+        # configs = [c for c in Path(args.config_root).iterdir()]
+        configs = [Path('arnet/configs').absolute() / f'{c}.yaml' for c in ['LSTM', 'CNN']]
+        datasets = ['sharp', 'fused_sharp', 'smarp', 'fused_smarp']
     t_start = time.time()
     databases = [p for p in Path(args.data_root).iterdir() if p.is_dir()]
     databases = [Path(args.data_root).absolute() / d for d in ['M_Q_24hr']]
-    configs = [c for c in Path(args.config_root).iterdir()]
-    # configs = [Path('arnet/configs').absolute() / f'{c}.yaml' for c in ['LSTM', 'CNN']]
     test_splits = [None] #range(5)
     val_splits = [None] #range(5)
-    seeds = range(10)
+    seeds = range(num_seeds)
     mlflow.set_experiment(args.experiment_name)
     with mlflow.start_run(run_name=args.run_name):
         for database in databases:
             for balanced in [True]:
-                for dataset in ['sharp', 'fused_sharp']: #, 'smarp', 'fused_smarp']:
+                for dataset in datasets:
                     for config in configs:
                         for seed in seeds:
                             for test_split in test_splits:
