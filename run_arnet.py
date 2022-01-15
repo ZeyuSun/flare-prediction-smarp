@@ -54,20 +54,8 @@ def train(cfg, dm, resume=False):
 
 def test(cfg, dm):
     learner = Learner.load_from_checkpoint(cfg.LEARNER.CHECKPOINT, cfg=cfg)
-    logger = build_test_logger(learner, testmode='test')
+    logger = build_test_logger(learner)
     trainer = pl.Trainer(logger=logger, **cfg.TRAINER.todict())
-    trainer.test(learner, datamodule=dm)
-
-
-def visualize(cfg, dm):
-    learner = Learner.load_from_checkpoint(cfg.LEARNER.CHECKPOINT, cfg=cfg)
-    logger = build_test_logger(learner, testmode='visualize')
-    trainer = pl.Trainer(logger=logger, **cfg.TRAINER.todict())
-
-    learner.testmode = dm.testmode = 'visualize_predictions'
-    trainer.test(learner, datamodule=dm)
-
-    learner.testmode = dm.testmode = 'visualize_features'
     trainer.test(learner, datamodule=dm)
 
 
@@ -104,11 +92,6 @@ def launch(config, modes, resume, opts):
         logger.info("======== TEST ========")
         test(cfg, dm)
 
-    #TODO: visualization for LSTM
-    if 'visualize' in modes:
-        logger.info("======== VISUALIZE ========")
-        visualize(cfg, dm)
-
 
 def main():
     parser = argparse.ArgumentParser()
@@ -120,15 +103,15 @@ def main():
                         help='MLflow run name')
     parser.add_argument('--config', metavar='FILE',
                         help="Path to a yaml formatted config file")
-    parser.add_argument('--modes', default='train|test|visualize',
-                        help="Perform training, testing, and/or visualization")
+    parser.add_argument('--modes', default='train|test',
+                        help="Perform training and/or testing")
     parser.add_argument('--resume', metavar='CHECKPOINT',
                         help="Resume training from checkpoint. Valid only in training mode.")
     parser.add_argument('opts', default=None, nargs=argparse.REMAINDER,
                         help="Modify config options. Use dot(.) to indicate hierarchy.")
     args = parser.parse_args()
     args.modes = args.modes.split('|')
-    accepted_modes = ['train', 'test', 'visualize']
+    accepted_modes = ['train', 'test']
     if any([m not in accepted_modes for m in args.modes]):
         raise AssertionError('Mode {} is not accepted'.format(args.modes))
     if 'train' not in args.modes and 'LEARNER.CHECKPOINT' not in args.opts:
@@ -172,8 +155,8 @@ def sweep():
     t_start = time.time()
     databases = [p for p in Path(args.data_root).iterdir() if p.is_dir()]
     databases = [Path(args.data_root).absolute() / d for d in ['M_Q_24hr']]
-    #configs = [c for c in Path(args.config_root).iterdir()]
-    configs = [Path('arnet/configs').absolute() / f'{c}.yaml' for c in ['LSTM', 'CNN']]
+    configs = [c for c in Path(args.config_root).iterdir()]
+    # configs = [Path('arnet/configs').absolute() / f'{c}.yaml' for c in ['LSTM', 'CNN']]
     test_splits = [None] #range(5)
     val_splits = [None] #range(5)
     seeds = range(10)
@@ -181,7 +164,7 @@ def sweep():
     with mlflow.start_run(run_name=args.run_name):
         for database in databases:
             for balanced in [True]:
-                for dataset in ['sharp', 'fused_sharp', 'smarp', 'fused_smarp']:
+                for dataset in ['sharp', 'fused_sharp']: #, 'smarp', 'fused_smarp']:
                     for config in configs:
                         for seed in seeds:
                             for test_split in test_splits:

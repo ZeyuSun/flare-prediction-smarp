@@ -62,8 +62,6 @@ SETTINGS = {
 
 @MODEL_REGISTRY.register()
 class SimpleC3D(nn.Module):
-    mode = 'classification'
-
     def __init__(self, cfg):
         """
         Args:
@@ -139,8 +137,6 @@ class SimpleC3D(nn.Module):
 
 @MODEL_REGISTRY.register()
 class CNN_Li2020(nn.Module):
-    mode = 'classification'
-
     def __init__(self, cfg):
         """
         Args:
@@ -217,8 +213,6 @@ class CNN_Li2020(nn.Module):
 
 @MODEL_REGISTRY.register()
 class MLP(nn.Module):
-    mode = 'classification'
-
     def __init__(self, cfg):
         super().__init__()
         self.set_class_weight(cfg)
@@ -267,8 +261,6 @@ class MLP(nn.Module):
 
 @MODEL_REGISTRY.register()
 class SimpleLSTM(nn.Module):
-    mode = 'classification'
-
     def __init__(self, cfg):
         super().__init__()
         self.set_class_weight(cfg)
@@ -319,8 +311,6 @@ class SimpleLSTM(nn.Module):
 
 @MODEL_REGISTRY.register()
 class FusionNet(nn.Module):
-    mode = 'classification'
-
     def __init__(self, cfg):
         """
         Args:

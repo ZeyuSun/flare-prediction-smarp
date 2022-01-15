@@ -20,10 +20,12 @@ from arnet.modeling.models import build_model
 logger = logging.getLogger(__name__)
 
 
-def build_test_logger(logged_learner, testmode):
-    logger = pl.loggers.TensorBoardLogger(logged_learner.logger_save_dir,
-                                          name=logged_learner.logger_name,
-                                          version=logged_learner.logger_version + '_' + testmode)
+def build_test_logger(logged_learner):
+    logger = pl.loggers.TensorBoardLogger(
+        logged_learner.logger_save_dir,
+        name=logged_learner.logger_name,
+        version=logged_learner.logger_version + '_test'
+    )
     return logger
 
 
@@ -37,7 +39,6 @@ class Learner(pl.LightningModule):
         self.cfg = cfg
         self.image = 'MAGNETOGRAM' in cfg.DATA.FEATURES
         self.model = build_model(cfg)
-        self.testmode = 'test'
         self.save_hyperparameters() # write to self.hparams. when save model, they are # responsible for tensorboard hp_metric
 
     def forward(self, *args, **kwargs):
@@ -110,7 +111,7 @@ class Learner(pl.LightningModule):
         if self.image:
             # Text
             if self.global_step in [0] or batch_idx == 0:
-                self.log_meta(self.model.result, model_type=self.model.mode)
+                self.log_meta(self.model.result)
 
             # Input videos (padded)
             if False: #self.global_step in [0] or batch_idx == 0:
@@ -163,85 +164,24 @@ class Learner(pl.LightningModule):
             mlflow.log_artifacts(self.logger.log_dir, 'tensorboard/train_val')
 
     def test_step(self, batch, batch_idx):
-        if self.testmode == 'test':
-            loss = self.model.get_loss(batch)
-            result = self.model.result
-            result.update({'test_loss': loss})
-            return result
-
-        elif self.testmode == 'visualize_predictions':
-            video, size, target, meta = batch
-            gradcam = utils.GradCAM(self.model,
-                                    target_layers=self.cfg.LEARNER.VIS.GRADCAM_LAYERS,
-                                    data_mean=0,
-                                    data_std=1)
-            video_gradcam, video_scaled, heatmap, output = gradcam(video)
-            loss = self.model.get_loss(batch)
-
-            self.log_video('visualize/inputs/gradcam_input', video_scaled, size=size, normalized=True, step=batch_idx)
-            self.log_video('visualize/inputs/gradcam_mask', heatmap, size=size, normalized=True, step=batch_idx)
-            self.log_video('visualize/inputs/gradcam', video_gradcam, size=size, normalized=True, step=batch_idx)
-            info = self.log_meta(self.model.result, model_type=self.model.mode)
-            vid_start_time = pd.to_datetime(info['start_time'], format='%Y%m%d%H%M%S')
-            forecast_issuance_time = vid_start_time + timedelta(hours=24)
-
-            result = self.model.result
-            result.update({'test_loss': loss, 'issuance': forecast_issuance_time})
-            return result
-
-        elif self.testmode == 'visualize_features':
-            video, size, target, meta = batch
-            _ = self.model(video)
-
-            self.log_video('visualize/inputs/full', video, size=size, step=batch_idx)
-            self.log_layer_activations('visualize_features', video, self.cfg.LEARNER.VIS.ACTIVATIONS, step=batch_idx)
+        loss = self.model.get_loss(batch)
+        result = self.model.result
+        result.update({'test_loss': loss})
+        return result
 
     def test_epoch_end(self, outputs):
-        if self.testmode == 'test':
-            avg_test_loss = torch.stack([out['test_loss'] for out in outputs]).mean()
-            self.log('test/loss', avg_test_loss)
-            if self.model.mode == 'classification':
-                y_true = torch.cat([out['y_true'] for out in outputs])
-                y_prob = torch.cat([out['y_prob'] for out in outputs])
-                self.trainer.datamodule.fill_prob('test', self.global_step, y_prob.detach().cpu().numpy())
-                scores, cm2, thresh = utils.get_metrics_probabilistic(y_true, y_prob, criterion=None)
-                #self.thresh = thresh
-                logger.info(scores)
-                logger.info(cm2)
-                self.log_scores('test', scores)
-                self.log_cm('test/cm2', cm2)
-                self.log_eval_plots('test', y_true, y_prob)
-            elif self.model.mode == 'regression':
-                i_true = torch.cat([out['i_true'] for out in outputs])
-                i_pred = torch.cat([out['i_pred'] for out in outputs])
-                scores, cm6, cm2, cmq = utils.get_metrics_multiclass(i_true, i_pred)
-                self.log_scores('test', scores)
-                self.log_cm('test/cm6', cm6, labels=['Q', 'A', 'B', 'C', 'M', 'X'])
-                self.log_cm('test/cm2', cm2)
-                self.log_cm('test/cmq', cmq)
-        elif self.testmode == 'visualize_predictions':
-            forecast_issuance_time = pd.concat([out['issuance'] for out in outputs]).tolist()
-            filename = os.path.join(self.logger.log_dir, 'temp.png')
-            if self.model.mode == 'classification':
-                y_true = torch.cat([out['y_true'] for out in outputs])
-                y_prob = torch.cat([out['y_prob'] for out in outputs])
-                utils.plot_prediction_curve(noaa_ar=11158,
-                                            times=forecast_issuance_time,
-                                            y_prob=y_prob.tolist(),
-                                            y_true=y_true.tolist(),
-                                            filename=filename)
-            elif self.model.mode == 'regression':
-                i_true = torch.cat([out['i_true'] for out in outputs])
-                i_pred = torch.cat([out['i_pred'] for out in outputs])
-                utils.plot_prediction_curve(noaa_ar=11158,
-                                            times=forecast_issuance_time,
-                                            y_prob=i_pred.tolist(),
-                                            y_true=i_true.tolist(),
-                                            filename=filename)
-        elif self.testmode == 'visualize_features':
-            pass
-        else:
-            raise ValueError
+        avg_test_loss = torch.stack([out['test_loss'] for out in outputs]).mean()
+        self.log('test/loss', avg_test_loss)
+        y_true = torch.cat([out['y_true'] for out in outputs])
+        y_prob = torch.cat([out['y_prob'] for out in outputs])
+        self.trainer.datamodule.fill_prob('test', self.global_step, y_prob.detach().cpu().numpy())
+        scores, cm2, thresh = utils.get_metrics_probabilistic(y_true, y_prob, criterion=None)
+        #self.thresh = thresh
+        logger.info(scores)
+        logger.info(cm2)
+        self.log_scores('test', scores)
+        self.log_cm('test/cm2', cm2)
+        self.log_eval_plots('test', y_true, y_prob)
         mlflow.log_artifacts(self.logger.log_dir, 'tensorboard/test')
 
     def predict_step(self, batch, batch_idx: int , dataloader_idx: int = None):
@@ -268,21 +208,13 @@ class Learner(pl.LightningModule):
         self.trainer.datamodule.val_history['test'].to_csv(tmp_path)
         mlflow.log_artifact(tmp_path, 'test')
 
-    def log_meta(self, outputs, model_type='classification', step=None):
+    def log_meta(self, outputs, step=None):
         video = outputs['video']
         meta = outputs['meta']
         video = video.detach().cpu().numpy()
-        if model_type == 'classification':
-            y_true = outputs['y_true'].detach().cpu().numpy()
-            y_prob = outputs['y_prob'].detach().cpu().numpy()
-            info = utils.generate_batch_info_classification(video, meta, y_true=y_true, y_prob=y_prob)
-        elif model_type == 'regression':
-            i_true = outputs['i_true'].detach().cpu().numpy()
-            i_hat = outputs['i_hat'].detach().cpu().numpy()
-            q_prob = outputs['q_prob'].detach().cpu().numpy()
-            info = utils.generate_batch_info_regression(video, meta, i_true=i_true, i_hat=i_hat, q_prob=q_prob)
-        else:
-            raise ValueError
+        y_true = outputs['y_true'].detach().cpu().numpy()
+        y_prob = outputs['y_prob'].detach().cpu().numpy()
+        info = utils.generate_batch_info_classification(video, meta, y_true=y_true, y_prob=y_prob)
         step = step or self.global_step
         self.logger.experiment.add_text("batch info", info.to_markdown(), step)
         return info
