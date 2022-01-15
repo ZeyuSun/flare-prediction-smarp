@@ -7,9 +7,9 @@ import pandas as pd
 
 FEATURES = ['AREA', 'USFLUXL', 'MEANGBL', 'R_VALUE', 'FLARE_INDEX']
 #TODO: constants calculated on training set
-PROCESSED_DATA_DIR = '/home/zeyusun/work/flare-prediction-smarp/datasets/M_Q_24hr'
+PROCESSED_DATA_DIR = 'datasets/M_Q_24hr'
 
-@lru_cache
+@lru_cache(8)
 def get_constants():
     CONSTANTS = {}
     for dataset in ['sharp', 'smarp']:

@@ -126,11 +126,9 @@ def main():
             'TRAINER.default_root_dir', 'lightning_logs_dev'
         ])
 
-    with cProfile.Profile() as p:
-        mlflow.set_experiment(experiment_name=args.experiment_name)
-        with mlflow.start_run(run_name=args.run_name) as run:
-            launch(args.config, args.modes, args.resume, args.opts)
-    pstats.Stats(p).sort_stats('cumtime').print_stats(50)
+    mlflow.set_experiment(experiment_name=args.experiment_name)
+    with mlflow.start_run(run_name=args.run_name) as run:
+        launch(args.config, args.modes, args.resume, args.opts)
 
 
 def sweep():

@@ -108,7 +108,7 @@ tomli==1.2.2
 torch==1.10.0
 torchinfo==1.5.3
 torchmetrics==0.6.0
-torchvision==0.11.1
+torchvision==0.11.2
 tqdm==4.62.2
 traitlets==5.0.5
 typing-extensions==3.10.0.1
@@ -121,3 +121,5 @@ yacs==0.1.8
 yarl==1.6.3
 zipp==3.6.0
 scikit-image==0.19.1
+sunpy[net]==3.1.2  # stable as of Dec 18, 2021
+torchinfo==1.5.3
