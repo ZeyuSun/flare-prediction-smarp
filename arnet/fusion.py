@@ -4,7 +4,7 @@ import pandas as pd
 
 
 def load_csv_dataset(csv_path):
-    df = pd.read_csv(csv_path)
+    df = pd.read_csv(csv_path, low_memory=False)
     df.loc[:, 'flares'] = df['flares'].fillna('')
     df.loc[:, 'bad_img_idx'] = df['bad_img_idx'].apply(
         lambda s: [int(x) for x in s.strip('[]').split()])

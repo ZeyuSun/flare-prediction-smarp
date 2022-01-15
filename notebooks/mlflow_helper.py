@@ -202,11 +202,12 @@ def print_pvalues(runs, dataset_name):
             print(metric, paired_ttest(a, b))
 
 
-def tabulate_pvalues(runs):
+def tabulate_pvalues(runs, metrics=None):
+    metrics = metrics or ['ACC', 'AUC', 'TSS', 'HSS', 'BSS']
     items = []
     for dataset_name in ['sharp', 'smarp']:
         for estimator_name in ['LSTM', 'CNN']:
-            for metric in ['ACC', 'AUC', 'TSS', 'HSS', 'BSS']:
+            for metric in metrics:
                 a = runs.loc[get_mask(runs, 'fused_'+dataset_name, estimator_name), metric].tolist()
                 b = runs.loc[get_mask(runs, dataset_name, estimator_name), metric].tolist()
                 statistic, pvalue = paired_ttest(a, b)
