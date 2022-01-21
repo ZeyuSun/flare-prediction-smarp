@@ -175,7 +175,7 @@ class ActiveRegionDataModule(pl.LightningDataModule):
             self.cfg.DATA.DATABASE,
             self.cfg.DATA.DATASET,
             self.cfg.DATA.AUXDATA,
-            sizes='balanced' if self.cfg.DATA.BALANCED else None,
+            balanced=self.cfg.DATA.BALANCED,
             validation=True,
             seed=self.cfg.DATA.SEED,
             val_split=getattr(self.cfg.DATA, 'VAL_SPLIT', None),

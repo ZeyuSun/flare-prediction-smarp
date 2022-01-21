@@ -49,14 +49,10 @@ def get_dataset_from_df(df):
 
 def get_dataset_numpy(database, dataset, auxdata, balanced=False, seed=None):
     if cfg['smoke']:
-        sizes = {0: 50, 1: 50}
-    elif balanced == True:
-        sizes = 'balanced'
-    else:
-        sizes = None
+        balanced = {0: 50, 1: 50}
 
     df_train, df_test = get_datasets(database, dataset, auxdata,
-                                     sizes=sizes, validation=False, shuffle=True, seed=seed)
+                                     balanced=balanced, validation=False, shuffle=True, seed=seed)
     X_train, y_train, g_train = get_dataset_from_df(df_train)
     X_test, y_test, g_test = get_dataset_from_df(df_test)
 
