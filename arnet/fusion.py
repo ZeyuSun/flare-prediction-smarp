@@ -127,7 +127,7 @@ def get_datasets(database, dataset, auxdata,
     # Why rus after split? Strict ratio; Option to rus only train/test differently
     df_train = rus(df_train, balanced=balanced, seed=seed)
     if validation:
-        df_val = rus(df_val, balanced=balanced, seed=seed)
+        df_val = rus(df_val, balanced=balanced_test, seed=seed)
     df_test = rus(df_test, balanced=balance_test, seed=seed)
 
     if shuffle:
