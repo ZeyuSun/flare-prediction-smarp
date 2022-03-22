@@ -16,10 +16,11 @@ import plotly.graph_objects as go
 import pytorch_lightning as pl
 import torch
 import mlflow
+from tqdm import tqdm
 
 from arnet.modeling.learner import Learner
 from arnet.dataset import ActiveRegionDataModule
-from mlflow_helper import retrieve, paired_ttest
+from mlflow_helper import retrieve, paired_ttest, get_labels_probs
 retrieve = lru_cache(retrieve)
 from dashboard_helper import get_learner, inspect_runs, predict, get_transform_from_learner
 
@@ -48,7 +49,9 @@ def plot_level_one_naive(X, y,
           .assign(**{'prob1': X[:, 1]}))
     fig = px.scatter(df, x='prob0', y='prob1',
                      error_x=X_err[0], error_y=X_err[1],
-                     color=y, **kwargs)    
+                     color=['Positive' if i else 'Negative' for i in y],
+                     opacity=0.8, size_max=3,
+                     **kwargs)    
 
     # Draw separating line
     if alpha is not None:
@@ -194,142 +197,6 @@ def get_val_csv(run, get_train: bool, rus=True, discard=True):
     return df_train, df_val, df_test
 
 
-class LevelOneData:
-    """Level-1 data class"""
-    def __init__(self, members=None, get_train=False, rus=True, discard=True):
-        """
-        Args:
-            members (List[List[str]]): Groups of learners. Each group's val sets
-                are to be concatenated, test sets reduced to mean.
-                Each learner query string is of format
-                'experiment/run/dataset/seed/val_split/test_split/estimator'.
-                An empty field defaults to the last member before this member
-                where this field is set (up to the default setting).
-                `members` are parsed and saved as self.selectors.
-            get_train: Whether to retrieve the train set, which is a bit more
-                time consumuing.
-        """
-        if isinstance(members[0], str):
-            members = [[m] for m in members]
-        self.dataframes = []
-        self.selectors = []
-        # selector s
-        s = {
-            'experiment': 'cv',
-            'run': 'cv',
-            'dataset': 'fused_sharp',
-            'seed': '0',
-            'val_split': '0',
-            'test_split': '0',
-            'estimator': 'LSTM',
-        }
-        for g, group in enumerate(members):
-            self.dataframes.append([])
-            self.selectors.append([])
-            for m, member in enumerate(group):
-                for (k, old), new in zip(s.items(), member.split('/')):
-                    s[k] = new or s[k] # update if specified
-                self.selectors[g].append(s.copy())
-                print(s.values())
-                runs = retrieve(s['experiment'], s['run'])
-                ## backward compatibility
-                if 'params.DATA.VAL_SPLIT' in runs.columns:
-                    s_val_split = (runs['params.DATA.VAL_SPLIT'] == s['val_split'])
-                else:
-                    s_val_split = [True] * len(runs) # don't use pd.Series. different index
-                if 'params.DATA.TEST_SPLIT' in runs.columns:
-                    s_test_split = (runs['params.DATA.TEST_SPLIT'] == s['test_split'])
-                else:
-                    s_test_split = [True] * len(runs)
-                ##
-                selected = runs.loc[
-                    (runs['tags.dataset_name'] == s['dataset']) &
-                    (runs['params.DATA.SEED'] == s['seed']) &
-                    s_val_split &
-                    s_test_split &
-                    (runs['tags.estimator_name'] == s['estimator'])
-                ]
-                if len(selected) > 1:
-                    print('WARNING: more than 1 runs')
-                df_train, df_val, df_test  = get_val_csv(
-                    selected.iloc[0],
-                    get_train if m == 0 else False, # only the first cv train fold will be used
-                    rus=rus,
-                    discard=discard,
-                )
-                self.dataframes[g].append({
-                    'train': df_train,
-                    'val': df_val,
-                    'test': df_test
-                })
-
-    def get_split(self, split, reduce=None, return_err=False):
-        Xs = [[member[split]['prob'].values
-               if member[split] is not None else None
-               for member in group]
-              for group in self.dataframes]
-        ys = [[member[split]['label'].values
-               if member[split] is not None else None
-               for member in group]
-              for group in self.dataframes]
-        cols = [c for c in self.dataframes[0][0][split].columns if c != 'prob']
-        dfs = [[member[split][cols]
-                if member[split] is not None else None
-                for member in group]
-               for group in self.dataframes]
-
-        # reduce within each group
-        default_reduce = {
-            'train': 'first', # first training fold in cv of first learner
-            'val': 'concat',
-            'test': 'mean'
-        }
-        reduce = reduce or default_reduce[split]
-        if reduce == 'first':
-            _Xs = [group[0] for group in Xs]
-            _ys = [group[0] for group in ys]
-            _dfs = [group[0] for group in dfs]
-        elif reduce == 'concat':
-            _Xs = [np.concatenate(group) for group in Xs]
-            _ys = [np.concatenate(group) for group in ys]
-            #_dfs = [pd.concat(group) for group in dfs]
-            _dfs = [pd.concat([member.assign(model_query='/'.join(self.selectors[g][m].values()))
-                               for m, member in enumerate(group)])
-                    for g, group in enumerate(dfs)]
-        elif reduce == 'mean':
-            _Xs = [np.mean(group, axis=0) for group in Xs]
-            _Xs_err = [np.std(group, axis=0) for group in Xs]
-            _ys = [group[0] for group in ys]
-            _dfs = [group[0] for group in dfs]
-        elif reduce == 'none':
-            #df_test_combined = (df_test_list[0]
-            #                    #.rename(columns={'prob': 'prob0'})
-            #                    .drop(columns=['prob'])
-            #                    .assign(**{f'prob{i}': df_test_list[i]['prob'] for i in range(5)})
-            #                   )
-            raise
-        else:
-            raise
-        
-        #TODO: _Xs can have different sizes, e.g., when each group consists of K cross validation folds for one test split
-        # The data structure has become too complicated, inoperable, nonflexible, nonextendable.
-        # Is it really necessary to separate X and y from df?
-        try:
-            X = np.stack(_Xs).T
-            if return_err:
-                X_err = np.stack(_Xs_err).T
-            #assert np.all(_ys[0] == _ys[1]) # could be only 1 group (e.g., when we just want to concat five test set to get the entire sharp)
-            y = _ys[0]
-            df = _dfs[0]
-
-            if return_err:
-                return X, X_err, y, df
-            else:
-                return X, y, df
-        except ValueError: #ValueError: all input arrays must have the same shape
-            return _Xs, _ys, _dfs
-
-
 # The followings are used for cross-entropy minimization
 def grad(X, y, alpha):
     """"""
@@ -403,6 +270,7 @@ def logit(x):
 
 def get_metrics(y_true, y_prob):
     y_pred = y_prob > 0.5
+    y_true = y_true.astype(bool)
 
     TP = np.sum(np.logical_and(y_true, y_pred))
     TN = np.sum(np.logical_and(~y_true, ~y_pred))
@@ -544,25 +412,18 @@ class MetaLearner:
         pass
 
 
-def meta_learn(levelone, train=False, axis_titles=None, run_name='temp'):
+def meta_learn(queries, train=False, axis_titles=None, run_name='temp', correct_prob=None):
     mlflow.set_experiment('stacking')
-    with mlflow.start_run(run_name=run_name):
+    with mlflow.start_run(run_name=run_name, nested=True):
         # Load data
-        if train:
-            X_train, y_train, df_train = levelone.get_split('train')
-        X_val, y_val, df_val = levelone.get_split('val')
-        X_test, y_test, df_test = levelone.get_split('test')
-        for name, X, y, df in [
-            ['train', X_train, y_train, df_train],
-            ['val', X_val, y_val, df_val],
-            ['test', X_test, y_test, df_test],
-        ]:
-            df[['LSTM', 'CNN']] = X
-            df.to_csv(f'stacking_{name}.csv')
-
+        X, y = {}, {}
+        splits = ['train', 'val', 'test'] if train else ['val', 'test']
+        for split in splits:
+            y[split], X[split] = zip(*[get_labels_probs(q, split, correct_prob) for q in queries])
+            y[split], X[split]  = y[split][0], np.stack(X[split]).T
 
         if train:
-            fig = plot_level_one_naive(X_train, y_train, axis_titles=axis_titles, meta=df_train)
+            fig = plot_level_one_naive(X['train'], y['train'], axis_titles=axis_titles)
             mlflow.log_figure(fig, 'data_train.html')
 
         settings = [
@@ -580,10 +441,11 @@ def meta_learn(levelone, train=False, axis_titles=None, run_name='temp'):
             criterion, mode = setting
             tag = f'{criterion}/'
             with mlflow.start_run(run_name=run_name, # same as parent run_name. Easy to retrieve
-                                  nested=True):
+                                  nested=True): # The idea was to retrieve all and select
                 keys = ['experiment', 'run', 'dataset', 'seed', 'val_split', 'test_split', 'estimator']
-                for g, group in enumerate(levelone.selectors):
-                    mlflow.log_params({k+str(g): group[0][k] for k in keys})
+                for g, q in enumerate(queries):
+                    params = dict(zip(keys, q.split('/')))
+                    mlflow.log_params({k+str(g): v for k, v in params.items()})
                 mlflow.log_param('criterion', criterion)
                 #parameter_names = [
                 #    'experiment0',
@@ -604,19 +466,19 @@ def meta_learn(levelone, train=False, axis_titles=None, run_name='temp'):
                     criterion=criterion,
                     mode=mode,
                 )
-                ml.fit(X_val, y_val)
+                ml.fit(X['val'], y['val'])
 
                 mlflow.log_metric('alpha', ml.alpha)
                 for i, metrics in enumerate(ml.metrics):
                     mlflow.log_metrics({'all_'+k: v for k, v in metrics.items()}, step=i)
 
-                metrics = ml.evaluate(X_test, y_test)
+                metrics = ml.evaluate(X['test'], y['test'])
                 mlflow.log_metrics(metrics, step=ml.i)
 
                 #fig = ml.inspect('convergence', filename=None)
                 #mlflow.log_figure(fig, tag + 'convergence_val.png')
 
-                fig = plot_level_one_naive(X_val, y_val, axis_titles=axis_titles, meta=df_val)
+                fig = plot_level_one_naive(X['val'], y['val'], axis_titles=axis_titles)
                 add_separating_line(fig, ml.alpha, dash='solid')
                 mlflow.log_figure(fig, tag + 'data_val.html') #png doesn't work
 
@@ -625,18 +487,18 @@ def meta_learn(levelone, train=False, axis_titles=None, run_name='temp'):
                     criterion=criterion,
                     mode=mode,
                 )
-                ml_test = ml_test.fit(X_test, y_test)
+                ml_test = ml_test.fit(X['test'], y['test'])
 
                 for i, metrics in enumerate(ml_test.metrics):
                     mlflow.log_metrics({'all_oracle_'+k: v for k, v in metrics.items()}, step=i)
 
-                metrics = ml_test.evaluate(X_test, y_test)
+                metrics = ml_test.evaluate(X['test'], y['test'])
                 mlflow.log_metrics({'oracle_' + k: v for k, v in metrics.items()}, step=ml_test.i)
 
                 #fig = ml_test.inspect('convergence', filename=None)
                 #mlflow.log_figure(fig, tag + 'convergence_test.png')
 
-                fig = plot_level_one_naive(X_test, y_test, axis_titles=axis_titles, meta=df_test)
+                fig = plot_level_one_naive(X['test'], y['test'], axis_titles=axis_titles)
                 add_separating_line(fig, ml.alpha, dash='solid')
                 add_separating_line(fig, ml_test.alpha, dash='dash')
                 mlflow.log_figure(fig, tag + 'data_test.html')
@@ -658,6 +520,23 @@ def meta_learn(levelone, train=False, axis_titles=None, run_name='temp'):
                 mlflow.log_figure(fig, tag + 'alpha.html')
 
 
+def run_meta_learn(
+        base_experiment_name='leaderboard8', base_run_name='reproduce_2',
+        #meta_experiment_name='stacking',
+        meta_run_name='reproduce_2'
+    ):
+    mlflow.set_experiment('stacking') # all runs at one time are collected together to not crowd mlflow ui
+    with mlflow.start_run(run_name=meta_run_name, nested=True):
+        for dataset_name in tqdm(['sharp', 'fused_sharp', 'smarp', 'fused_smarp']):
+            for seed in tqdm(range(10)):
+                queries = [
+                    f'{base_experiment_name}/{base_run_name}/{dataset_name}/{seed}/None/None/LSTM',
+                    f'{base_experiment_name}/{base_run_name}/{dataset_name}/{seed}/None/None/CNN',
+                ]
+                axis_titles = ['LSTM predicted probability', 'CNN predicted probability']
+                meta_learn(queries, train=False, axis_titles=axis_titles, run_name=meta_run_name)
+                
+                
 def retrieve_run(query):
     """
     Args:
@@ -712,7 +591,8 @@ def meta_learn_show_results(run_name='cv',
                             criteria_opt=None,
                             to_replace=None,
                             to_rename=None,
-                            return_dfs=None):
+                            return_dfs=None,
+                            folder=None):
     """
     Args:
         run_name: mlflow runName (in experiment 'stacking').
@@ -723,6 +603,11 @@ def meta_learn_show_results(run_name='cv',
         to_replace (dict): a map to replace dataframe values by column. Used in visualization.
         to_rename (dict): a map to rename dataframe columns. Used in visualization.
     """
+    # Output dir
+    import os
+    if folder and not os.path.exists(folder):
+        os.makedirs(folder)
+        
     # Process arguments
     if isinstance(run_name, str):
         runs = retrieve('stacking', run_name, p=None)
@@ -732,6 +617,7 @@ def meta_learn_show_results(run_name='cv',
         runs = run_name
     else:
         raise
+    runs = runs[~runs['params.criterion'].isna()] # get rid of the middle generation, who don't have params or metrics
     
     criteria_opt = criteria_opt or [
         'CNN', 'LSTM',
@@ -767,9 +653,10 @@ def meta_learn_show_results(run_name='cv',
 
     # Collect mlflow records of stacking ensembles
     _df = (runs
-          .loc[:, [group_col, 'params.criterion', rep_col, f'metrics.{criterion_eval}_over_best']]
-          .set_index([group_col, 'params.criterion', rep_col])
-          .unstack(-1)
+           .loc[:, [group_col, 'params.criterion', rep_col, f'metrics.{criterion_eval}_over_best']]
+           .set_index([group_col, 'params.criterion', rep_col])
+           .sort_index()  # group multiindex
+           .unstack(-1)
          )
     ## The above selection rule is abstracted in unstack_reps:
     #index_cols = ['params.dataset0', 'params.criterion']
@@ -871,11 +758,12 @@ def meta_learn_show_results(run_name='cv',
         #points='all',
         labels=to_rename,
     )
-    #fig.update_layout(
-    #    width=1500,
-    #    height=400,
-    #)
-    #fig.write_image('stacking.png', scale=2)
+    if folder:
+        fig.update_layout(
+           width=1500/1.5,
+           height=400/1.2,
+        )
+        fig.write_image(os.path.join(folder, 'stacking.png'), scale=2)
 
     # Plot weight alpha
     is_stacking = df_replaced['params.criterion'].isin([
@@ -904,7 +792,12 @@ def meta_learn_show_results(run_name='cv',
         yaxis_title=r'$\alpha$', # write_image to png works; write_html and show in jupyter not working.
         yaxis_range=[-0.05, 1.05],
     )
-    #fig_alpha.write_image('stacking_weights.png', scale=2)
+    if folder:
+        fig_alpha.update_layout(
+           width=1500/1.5,
+           height=400/1.3,
+        )
+        fig_alpha.write_image(os.path.join(folder, 'stacking_weights.png'), scale=2)
     
     dfs_table = {
         '_df': _df,
@@ -917,62 +810,69 @@ def meta_learn_show_results(run_name='cv',
     return fig, fig_alpha, dfs
 
 
-if __name__ == '__main__':
-    for dataset_name in ['smarp']:
-        for seed in range(3,4):
-            members = [
-                f'leaderboard3/val_tss/{dataset_name}/{seed}/0/0/LSTM',
-                f'//////CNN'
-            ]
-            axis_titles = ['LSTM predicted probability', 'CNN predicted probability']
-            levelone = LevelOneData(members, get_train=True)
-            meta_learn(levelone, train=True, axis_titles=axis_titles, run_name='FN_bug_reproduce')
+def meta_learn_show_instance(
+        base_experiment_name='leaderboard8',
+        base_run_name='reproduce_2',
+        query='smarp/0/acc', #dataset, seed, criterion
+        correct_prob=None,
+    ):
+    dataset, seed, criterion = query.split('/')
+    queries = [f'{base_experiment_name}/{base_run_name}/{dataset}/{seed}/None/None/LSTM',
+               f'{base_experiment_name}/{base_run_name}/{dataset}/{seed}/None/None/CNN']
+    # Load data
+    X, y, df = {}, {}, {}
+    splits = ['train', 'val', 'test']  # if train else ['val', 'test']
+    for split in splits:
+        y[split], X[split], df[split] = zip(*[get_labels_probs(q, split, correct_prob, return_df=True)
+                                              for q in queries])
+        y[split], X[split], df[split] = y[split][0].astype(int), np.stack(X[split]).T, df[split][0]
 
-    #for dataset_name in ['sharp', 'fused_sharp', 'smarp', 'fused_smarp']:
-    #    for seed in range(5, 10):
-    #        members = [
-    #            f'leaderboard3/val_tss_2/{dataset_name}/{seed}/0/0/LSTM',
-    #            f'//////CNN'
-    #        ]
-    #        axis_titles = ['LSTM', 'CNN']
-    #        levelone = LevelOneData(members, get_train=True)
-    #        meta_learn(levelone, train=True, axis_titles=axis_titles, run_name='FN_bug_2_reproduce')
-
-    # Figure remaking
-    #members = [
-    #    f'leaderboard3/val_tss_2/fused_sharp/8/LSTM',
-    #    f'////CNN'
-    #]
-    #axis_titles = ['LSTM predicted probability', 'CNN predicted probability']
-    #levelone = LevelOneData(members, get_train=True)
-    #meta_learn(levelone, train=True, axis_titles=axis_titles, run_name='estimator_2_seed_8')
-
-    #run_name = 'dataset'
-    #for dataset in ['sharp', 'smarp']:
-    #    other = 'smarp' if dataset == 'sharp' else 'sharp'
-    #    for estimator_name in ['LSTM', 'CNN']:
-    #        for seed in range(5):
-    #            members = [
-    #                f'ensemble/disjoint_train/{dataset}/{seed}/{estimator_name}',
-    #                f'//fused_{dataset}//'
-    #            ]
-    #            axis_titles = [f'{estimator_name}_{dataset.upper()}',
-    #                           f'{estimator_name}_{other.upper()}']
-    #            levelone = LevelOneData(members, get_train=False)
-    #            meta_learn(levelone, train=False, axis_titles=axis_titles, run_name=run_name)
+    # Train
+    fig_train = plot_level_one_naive(X['train'], y['train'],
+                                     axis_titles=['LSTM predicted probability', 'CNN predicted probability'],
+                                     #alpha=ml.alpha,
+                                     meta=df['train'])
+    # Val
+    ml = MetaLearner(criterion=criterion, mode='max')
+    ml.fit(X['val'], y['val'])
+    fig_val = plot_level_one_naive(X['val'], y['val'],
+                                   axis_titles=['LSTM predicted probability', 'CNN predicted probability'],
+                                   alpha=ml.alpha, meta=df['val'])
     
-    #run_name = 'cv'
-    #for dataset_name in ['sharp', 'fused_sharp', 'smarp', 'fused_smarp']:
-    #    for test_split in range(5):
-    #        members = [[f'cv/base/{dataset_name}/0/0/{test_split}/LSTM',
-    #                    '////1//',
-    #                    '////2//',
-    #                    '////3//',
-    #                    '////4//'],
-    #                   [f'cv/base/{dataset_name}/0/0/{test_split}/CNN',
-    #                    '////1//',
-    #                    '////2//',
-    #                    '////3//',
-    #                    '////4//']]
-    #        levelone = LevelOneData(members, get_train=True)
-    #        meta_learn(levelone, train=True, run_name=run_name)
+    # Test
+    ml_test = MetaLearner(criterion=criterion, mode='max')
+    ml_test.fit(X['test'], y['test'])
+    fig_test = plot_level_one_naive(X['test'], y['test'],
+                                    #X_err=X_test_std, # err is too large, especially points near 0.5
+                                    axis_titles=['LSTM predicted probability', 'CNN predicted probability'],
+                                    alpha=ml.alpha, meta=df['test'])
+    add_separating_line(fig_test, ml_test.alpha, dash='dash')
+    
+    # alpha
+    alphas = np.linspace(0, 1, 100)
+    df_alpha = pd.DataFrame({
+        'alpha': alphas,
+        'val_metric': [m[criterion] for m in ml.metrics],
+        'test_metric': [m[criterion] for m in ml_test.metrics],
+    })
+    fig_alpha_grid = px.line(df_alpha, x='alpha', y=['val_metric', 'test_metric'], labels={'value': criterion.upper()})
+    idx = np.argmax(df_alpha['val_metric'])
+    fig_alpha_grid.add_trace(go.Scatter(x=[alphas[idx]], y=[ml.metrics[idx][criterion]], marker_size=10, showlegend=False))
+    fig_alpha_grid.add_vline(x=alphas[idx], line_color=px.colors.qualitative.Plotly[2], line_dash='dot')
+    fig_alpha_grid.update_layout(
+        height=300,
+        width=450,
+        margin=dict(l=0,r=0,b=0,t=0),
+    )
+    return fig_train, fig_val, fig_test, fig_alpha_grid
+
+
+if __name__ == '__main__':
+    # Fit stacking weights
+    base_exp_name, base_run_name, meta_run_name = (
+        'leaderboard8', 'reproduce_3', 'smoke_test', #'reproduce_3_transfer'
+    )
+    run_meta_learn(
+        base_experiment_name=base_exp_name, base_run_name=base_run_name,
+        meta_run_name=meta_run_name,
+    )

@@ -35,7 +35,8 @@ class Learner(pl.LightningModule):
         model: torch.nn.Module
         cfg: model-agnostic experiment configs
         """
-        super(Learner, self).__init__()
+        #super(Learner, self).__init__()
+        super().__init__()
         self.cfg = cfg
         self.image = 'MAGNETOGRAM' in cfg.DATA.FEATURES
         self.model = build_model(cfg)
@@ -45,14 +46,16 @@ class Learner(pl.LightningModule):
         return self.model(*args, **kwargs)
 
     def on_load_checkpoint(self, checkpoint) -> None:
-        ckpt_list = checkpoint['hyper_parameters']['cfg']['LEARNER']['CHECKPOINT'].split('/')
         #  log_dev / lightning_logs / version_0 / checkpoints / epoch=0-step=4.ckpt
         # =======================================
         # save_dir /    (name)        (version)
         # ------- root_dir ---------/
         # ------------ log_dir ----------------/
-        self.logger_save_dir, self.logger_name, self.logger_version = (
-            ckpt_list[-5], ckpt_list[-4], ckpt_list[-3])
+        # ckpt_list = checkpoint['hyper_parameters']['cfg']['LEARNER']['CHECKPOINT'].split('/')
+        # self.logger_save_dir, self.logger_name, self.logger_version = (
+        #     ckpt_list[-5], ckpt_list[-4], ckpt_list[-3])
+        # I gave up modifying test log dir because it requires checkpoint['callbacks']["ModelCheckpoint{'monitor': 'validation0/tss', 'mode': 'max', 'every_n_train_steps': 0, 'every_n_epochs': 1, 'train_time_interval': None, 'save_on_train_epoch_end': True}"]['best_model_path']
+        pass
 
     def grad_norm(self, norm_type: Union[float, int, str]) -> Dict[str, float]:
         """Compute each parameter's gradient's norm and their overall norm.

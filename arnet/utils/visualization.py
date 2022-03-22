@@ -386,6 +386,7 @@ def draw_roc(
     aucs = [None] * len(y_true)
     for i, (y_t, y_p) in enumerate(zip(y_true, y_prob)):
         fpr, tpr, thresholds = roc_curve(y_t, y_p)
+        #fpr0, tpr0 = get_fpr_tpr_at_threshold(fpr, tpr, thresholds, threshold=0.5)
         tpr_grid[i] = np.interp(fpr_grid, fpr, tpr)
         aucs[i] = auc(fpr, tpr)
     tpr_mean = np.mean(tpr_grid, axis=0)
@@ -407,7 +408,9 @@ def draw_roc(
     else:
         label = r'AUC = %0.3f' % auc_mean
     if name is not None:
-        label = name + ' (' + label + ')'
+        #label = name + ' (' + label + ')'
+        # When figsize is small box length overflow
+        label = name + '\n(' + label + ')'
     line, = ax.plot(
         fpr_grid,
         tpr_mean,

@@ -7,7 +7,10 @@ import pandas as pd
 
 FEATURES = ['AREA', 'USFLUXL', 'MEANGBL', 'R_VALUE', 'FLARE_INDEX']
 #TODO: constants calculated on training set
-PROCESSED_DATA_DIR = 'datasets/M_Q_24hr'
+# relative address: code may be run from other directory, e.g., notebooks/
+# absolute address: different machine
+# Should use a env variable
+PROCESSED_DATA_DIR = '/home/zeyusun/work/flare-prediction-smarp/datasets/M_Q_24hr/'
 
 @lru_cache(8)
 def get_constants():

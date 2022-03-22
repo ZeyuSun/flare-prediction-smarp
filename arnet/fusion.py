@@ -76,7 +76,7 @@ def rus(df, balanced=False, seed=False):
 def get_datasets(database, dataset, auxdata,
                  balanced=True, validation=False, shuffle=False, seed=None,
                  val_split=0, test_split=0,
-                 balance_test=False,
+                 balanced_test=False,
     ):
     """
     Args:
@@ -128,7 +128,7 @@ def get_datasets(database, dataset, auxdata,
     df_train = rus(df_train, balanced=balanced, seed=seed)
     if validation:
         df_val = rus(df_val, balanced=balanced_test, seed=seed)
-    df_test = rus(df_test, balanced=balance_test, seed=seed)
+    df_test = rus(df_test, balanced=balanced_test, seed=seed)
 
     if shuffle:
         df_train = df_train.sample(frac=1, random_state=seed)

@@ -123,3 +123,5 @@ zipp==3.6.0
 scikit-image==0.19.1
 sunpy[net]==3.1.2  # stable as of Dec 18, 2021
 torchinfo==1.5.3
+uncertainties==3.1.6
+plotly
