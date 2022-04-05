@@ -1,5 +1,8 @@
-# flare-prediction-smarp
-Flare prediction with SMARP and SHARP
+# Predicting Solar Flares Using CNN and LSTM on Two Solar Cycles of Active Region Data
+
+[![DOI](https://zenodo.org/badge/358039770.svg)](https://zenodo.org/badge/latestdoi/358039770)
+
+This repository contains codes for data processing, model training, and performance evaluation used in paper *Predicting Solar Flares Using CNN and LSTM on Two Solar Cycles of Active Region Data* (Sun et al. 2022)
 
 ## Quick start
 1. Download data: Change the email and data directory in `download.py` and run `python download.py`.
