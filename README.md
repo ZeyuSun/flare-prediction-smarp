@@ -18,6 +18,7 @@ Flare prediction with SMARP and SHARP
 5. Present results (notebooks/mlflow_results.ipynb)
 
 ## Citation
+```plain
 @article{10.1002/essoar.10508256.3,
   author = {Sun, Zeyu and Bobra, Monica and Wang, Xiantong and Wang, Yu and Sun, Hu and Gombosi, Tamas and Chen, Yang and Hero, Alfred},
   title = {Predicting Solar Flares using CNN and LSTM on Two Solar Cycles of Active Region Data},
@@ -27,3 +28,4 @@ Flare prediction with SMARP and SHARP
   DOI = {10.1002/essoar.10508256.3},
   url = {https://doi.org/10.1002/essoar.10508256.3},
 }
+```
