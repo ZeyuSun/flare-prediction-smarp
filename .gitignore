@@ -4,7 +4,12 @@
 mlruns/
 _archive/
 download/
-datasets/
+
+datasets/*
+!datasets/M_Q_24hr/
+datasets/M_Q_24hr/*
+!datasets/M_Q_24hr/sharp.csv
+
 outputs/
 outputs_smoke/
 lightning_logs*
