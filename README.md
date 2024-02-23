@@ -10,7 +10,7 @@ This repository contains codes for data processing, model training, and performa
   1. Change the data directory in `preprocess.py`.
   2. Install Redis. (Alternatively, change the default value of `redis` to False in function `query` in `data.py`)
   3. Run `python preprocess.py`.
-3. Exploratory data analysis
+3. Exploratory data analysis (`eda.py`)
 4. Fit and evaluate machine learning methods:
   1. Scikit-learn models
   2. Pytorch-lightning models
@@ -22,13 +22,14 @@ This repository contains codes for data processing, model training, and performa
 
 ## Citation
 ```plain
-@article{10.1002/essoar.10508256.3,
-  author = {Sun, Zeyu and Bobra, Monica and Wang, Xiantong and Wang, Yu and Sun, Hu and Gombosi, Tamas and Chen, Yang and Hero, Alfred},
-  title = {Predicting Solar Flares using CNN and LSTM on Two Solar Cycles of Active Region Data},
-  journal = {Earth and Space Science Open Archive},
-  pages = {31},
-  year = {2021},
-  DOI = {10.1002/essoar.10508256.3},
-  url = {https://doi.org/10.1002/essoar.10508256.3},
+@article{sun2022predicting,
+  title={Predicting solar flares using cnn and lstm on two solar cycles of active region data},
+  author={Sun, Zeyu and Bobra, Monica G and Wang, Xiantong and Wang, Yu and Sun, Hu and Gombosi, Tamas and Chen, Yang and Hero, Alfred},
+  journal={The Astrophysical Journal},
+  volume={931},
+  number={2},
+  pages={163},
+  year={2022},
+  publisher={IOP Publishing}
 }
 ```
